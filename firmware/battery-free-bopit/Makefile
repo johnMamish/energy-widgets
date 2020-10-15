@@ -13,13 +13,15 @@ MCU        = msp430fr5994
 # List all the source files here
 # eg if you have a source file foo.c then list it here
 SOURCES = main.c
+SOURCES += audio_samples.c
+
 # Include are located in the Include directory
 INCLUDES = -IInclude -I/opt/ti/msp430/gcc/include
 # Add or subtract whatever MSPGCC flags you want. There are plenty more
 #######################################################################################
-CFLAGS   = -mmcu=$(MCU) -g -O0 -Wall -Wunused $(INCLUDES)
-ASFLAGS  = -mmcu=$(MCU) -x assembler-with-cpp -Wa,-gstabs
-LDFLAGS  = -mmcu=$(MCU) -Wl,-Map=$(TARGET).map -Wl,-L/opt/ti/msp430/gcc/include
+CFLAGS   = -mmcu=$(MCU) -g -O0 -Wall -Wunused $(INCLUDES) -mlarge
+ASFLAGS  = -mmcu=$(MCU) -x assembler-with-cpp -Wa,-gstabs -Wa,-mlarge
+LDFLAGS  = -mmcu=$(MCU) -Wl,-Map=$(TARGET).map -Wl,-L/opt/ti/msp430/gcc/include -mlarge
 ########################################################################################
 CC       = msp430-elf-gcc
 LD       = msp430-ld
