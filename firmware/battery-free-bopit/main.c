@@ -7,11 +7,21 @@
  */
 static void init_hardware();
 
+static uint16_t dma_src_word = 0x80;
+static uint16_t dma_dest_word = 0x0000;
 int main()
 {
     init_hardware();
 
-    while(1);
+    // start DMA1
+    DMA1CTL |= (0b1u << 4);
+    //DMA1CTL |= (1 << 0);
+    while(1) {
+        if (DMA1CTL & (1 << 3)) {
+            DMA1CTL &= ~(1 << 3);
+            dma_src_word = (dma_src_word == 0x40) ? (0x00) : (dma_src_word + 1);
+        }
+    }
 
     return -1;
 }
@@ -26,11 +36,6 @@ static void init_hardware()
     PM5CTL0 &= ~LOCKLPM5;
 
     // todo: make all pins pulldown for power saving (see 12.3.2)
-
-
-    // todo: increase clock frequency?
-    // notes: see CSCTL1 register and Figure 3-1: clock system bus diagram; MCLK and SMCLK both use
-    // DCO  / 8 at startup; DCO is set to 8MHz at startup.
 
     // Change SMCLK to be 8MHz / 1 instead of 8MHz / 8. Clock control registers need to be unlocked
     // by writing a key value to CSCTL0 first.
@@ -56,7 +61,7 @@ static void init_hardware()
                 (0b00u  <<  9) |      // TB0CL0 loads immediately when CCR0 is written.
                 (0b0u   <<  8) |      // Compare mode
                 (0b000u <<  5) |      // Output mode is don't care.
-                (0b1u   <<  4) |      // Capture/Compare interrupt enable
+                (0b0u   <<  4) |      // Capture/Compare interrupt enable
                 (0b0000u << 0));      // Bottom 4 bits are all don't care.
     TB0CCR0  = 0x0000u;
 
@@ -82,10 +87,23 @@ static void init_hardware()
 
 
     ////////////////////////////////////////////////////////////////
-    // TODO: Set up DMA channel 'a'.
-    // DMA channel 0 loads data from SPI RXBUF (UCxRXBUF) into TB0CCR3.
-    // It should be triggered by TB0CCR0 CCIFG and have lower precedence than DMA channel 'b'.
+    // TODO: Set up DMA channel 1.
+    // DMA channel 1 loads data from SPI RXBUF (UCxRXBUF) into TB0CCR3.
+    // It should be triggered by TB0CCR0 CCIFG and have lower precedence than DMA channel 0.
     // Alternatively, it could be triggered by SPI TX complete.
+    DMA1SA   = (intptr_t)(&dma_src_word);
+    DMA1DA   = (intptr_t)(&TB0CCR3);
+    //DMA1DA   = (intptr_t)(&dma_dest_word);
+    DMA1SZ   = 1;
+    DMACTL0 &= ~(0b11111u << 8); DMACTL0 |= DMA1TSEL__TB0CCR0;
+    DMA1CTL  = ((0b100u  << 12) |     // DMA xfer mode: repeated single xfer
+                (0b00u   << 10) |     // Don't increment destination.
+                (0b00u   <<  8) |     // Don't increment source.
+                (0b0u    <<  7) |     // Destination is a word, not a byte.
+                (0b0u    <<  6) |     // Source is a word, not a byte.
+                (0b1u    <<  5) |     // level sensitive DMA trigger
+                (0b0u    <<  4) |     // DMA Enable
+                (0b0100u <<  0));     // Bottom 4 bits are flags / don't care.
 
 
     ////////////////////////////////////////////////////////////////
