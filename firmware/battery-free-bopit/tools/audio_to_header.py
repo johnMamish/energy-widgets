@@ -11,7 +11,7 @@ if __name__ == "__main__":
 
     header = open("audio_samples.h", "w")
     src    = open("audio_samples.c", "w")
-    header.write("#ifndef _AUDIO_SAMPLES_H\n#define _AUDIO_SAMPLES_H\n\n#include <stdint.h>\n\n")
+    header.write("#ifndef _AUDIO_SAMPLES_H\n#define _AUDIO_SAMPLES_H\n\n#include <stdint.h>\n#include<stddef.h>\n\n")
     src.write("#include \"audio_samples.h\"\n\n")
 
     for filename in sys.argv[1:]:
@@ -26,8 +26,8 @@ if __name__ == "__main__":
         samps = [((x + 128) % 256) for x in samps]
 
         an = "".join([c if c.isalnum() else "_" for c in filename])
-        header.write("extern static const uint8_t " + an + "[];\n")
-        header.write("extern static const size_t " + an + "_size;\n\n")
+        header.write("extern const uint8_t " + an + "[];\n")
+        header.write("extern const size_t " + an + "_size;\n\n")
 
         src.write("static const uint8_t " + an + "[] = \n{\n    ")
         src.write("\n    ".join(textwrap.wrap(", ".join([hex(b) for b in samps]))))
