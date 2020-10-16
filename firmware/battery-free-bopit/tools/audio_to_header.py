@@ -22,17 +22,22 @@ if __name__ == "__main__":
         samps = f.readframes(f.getnframes())[(depth - 1)::(depth * chans)]
         f.close()
 
-        # add 128
+        # Convert from 2's complement to unsigned
         samps = [((x + 128) % 256) for x in samps]
+        if (len(samps) > 20000):
+            samps = samps[:20000]
+
+        # Zero out last sample
+        samps[-1] = 0;
 
         an = "".join([c if c.isalnum() else "_" for c in filename])
         header.write("extern const uint8_t " + an + "[];\n")
         header.write("extern const size_t " + an + "_size;\n\n")
 
-        src.write("static const uint8_t " + an + "[] = \n{\n    ")
+        src.write("const uint8_t " + an + "[] __attribute__((section(\".upper.rodata\"))) = \n{\n    ")
         src.write("\n    ".join(textwrap.wrap(", ".join([hex(b) for b in samps]))))
         src.write("\n};\n")
-        src.write("static const size_t " + an + "_size = sizeof(" + an + ");\n\n")
+        src.write("const size_t " + an + "_size = sizeof(" + an + ");\n\n")
 
     header.write("#endif")
     header.close()
