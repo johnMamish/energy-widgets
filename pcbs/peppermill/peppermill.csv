@@ -1,0 +1,17 @@
+"Part";"Value";"Device";"Package";"Description";"DIGIKEY";"PROD_ID";"VALUE";
+"C1";"1u";"CAP0805";"0805";"Capacitor";"";"";"";
+"C2";"10u";"CAP0805";"0805";"Capacitor";"";"";"";
+"C3";"1u";"CAP0805";"0805";"Capacitor";"";"";"";
+"D1";"";"BAT20JFILM";"SOD-323";"23V, 1A Schottky diode, SOD-323 package";"1727-3877-1-ND";"DIO-11623";"BAT20JFILM";
+"D2";"";"BAT20JFILM";"SOD-323";"23V, 1A Schottky diode, SOD-323 package";"1727-3877-1-ND";"DIO-11623";"BAT20JFILM";
+"D3";"";"BAT20JFILM";"SOD-323";"23V, 1A Schottky diode, SOD-323 package";"1727-3877-1-ND";"DIO-11623";"BAT20JFILM";
+"D4";"";"BAT20JFILM";"SOD-323";"23V, 1A Schottky diode, SOD-323 package";"1727-3877-1-ND";"DIO-11623";"BAT20JFILM";
+"D5";"16V";"DIODE-ZENER16V";"SOD-123";"Zener Diode";"1727-3600-1-ND";"DIO-12440";"16V";
+"JP1";"MOTOR";"M022.54MM_SCREWTERM";"1X02_2.54_SCREWTERM";"Standard 2-pin 0.1" header. Use with";"";"";"";
+"JP2";"";"M05LOCK";"1X05_LOCK";"Header 5";"";"";"";
+"R1";"1k";"RESISTOR0805-RES";"0805";"Resistor";"";"";"";
+"R2";"100k";"RESISTOR0805-RES";"0805";"Resistor";"";"";"";
+"R3";"102k";"RESISTOR0805-RES";"0805";"Resistor";"";"";"";
+"R4";"100k";"RESISTOR0805-RES";"0805";"Resistor";"";"";"";
+"R5";"6.2k";"RESISTOR0805-RES";"0805";"Resistor";"";"";"";
+"U1";"V_REG_MIC5235";"V_REG_MIC5235";"SOT23-5";"";"576-1284-1-ND ";"";"";
