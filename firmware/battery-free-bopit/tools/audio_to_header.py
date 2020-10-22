@@ -27,8 +27,10 @@ if __name__ == "__main__":
         if (len(samps) > 20000):
             samps = samps[:20000]
 
-        # Zero out last sample
-        samps[-1] = 0;
+        # Zero out last sample. Should be 128 as this is "DC" in our system.
+        # but... maybe it would be a good idea to ramp it down from 0x80 to 0x00 over like 20
+        # samples to avoid extra power dissipation from having the timer on all the time? TODO later.
+        samps[-1] = 128;
 
         an = "".join([c if c.isalnum() else "_" for c in filename])
         header.write("extern const uint8_t " + an + "[];\n")

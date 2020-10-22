@@ -37,7 +37,7 @@ int main()
 
     uint32_t rando = 0xa5ce5b3a;
 
-    uint16_t eighth_note_delay = (1 << 15) - 100;
+    uint16_t eighth_note_delay = 32767 - 10;
     TA0CTL |= (1 << 2);
 
     while(1) {
@@ -49,7 +49,7 @@ int main()
         for (uint8_t i = 0; i < 2; i++, advance_lfsr(&rando));
         idx += (rando & 0x03);
         TA0CTL |= (1 << 2);
-        start_audio_dma(action_sounds[idx], __assets_bop_1_wav_size);
+        start_audio_dma((eighth_note_delay < 25000) ? action_sounds[4] : action_sounds[idx], __assets_bop_1_wav_size);
         //while(DMA1CTL & (1 << 4));
         while(TA0R < (eighth_note_delay));
 
@@ -156,8 +156,7 @@ static void init_hardware()
     // Alternatively, it could be triggered by SPI TX complete.
     DMA1SA   = 0;
     DMA1DA   = 0;
-    //DMA1DA   = (intptr_t)(&dma_dest_word);
-    DMA1SZ   = 1;
+    DMA1SZ   = 0;
     DMACTL0 &= ~(0b11111u << 8); DMACTL0 |= DMA1TSEL__TB0CCR0;
     DMA1CTL  = ((0b000u  << 12) |     // DMA xfer mode: single xfer
                 (0b00u   << 10) |     // Don't increment destination.
@@ -171,6 +170,9 @@ static void init_hardware()
 
 static void start_audio_dma(const uint8_t* src, int32_t len)
 {
+    // Potentially stop transfer
+    DMA1CTL &= ~(0b1u << 4);
+
     // set up source and length
     __data16_write_addr((uintptr_t)(&DMA1SA), (uintptr_t)src);
     DMA1DA   = (intptr_t)(&TB0CCR3);
