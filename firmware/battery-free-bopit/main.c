@@ -64,7 +64,7 @@ int main()
         start_audio_dma(__assets_Closed_Hi_Hat_5_wav, __assets_Closed_Hi_Hat_5_wav_size);
         while(TA0R < (eighth_note_delay * 2));
 
-        // bass kicks
+         // bass kicks
         TA0CTL |= (1 << 2);
         start_audio_dma(__assets_dry_kick_wav, __assets_dry_kick_wav_size);
         while(TA0R < (eighth_note_delay));
@@ -166,6 +166,41 @@ static void init_hardware()
                 (0b1u    <<  5) |     // level sensitive DMA trigger
                 (0b0u    <<  4) |     // DMA Enable
                 (0b0100u <<  0));     // Bottom 4 bits are flags / don't care.
+
+    ////////////////////////////////////////////////////////////////
+    // Set up ADC to sample channels A12 - A15 (pins p3.0-3)
+    // The sample rate over 9 (3 * 3) pins should be ~1kHz. The
+    P3SEL0 |= (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3);
+    P3SEL1 |= (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3);
+    ADC12CTL0 = ((0b0000 << 12) |     // ADC samp/hold time 1 is 4 ADC clocks
+                 (0b0000 << 8)  |     // ADC samp/hold time 2 is 4 ADC clocks
+                 (0b0    << 7)  |     // Don't run continuously
+                 (0b1    << 4)  |     // Turn ADC on
+                 (0b0    << 1)  |     // Don't enable or start conversions yet
+                 (0b0    << 0));
+
+    ADC12CTL1 = ((0b10   << 13) |     // Pre-divide by 32 for an input clock of 250kHz
+                 (0b000  << 10) |     // Sample hold source select is software-triggered (?)
+                 (0b1    << 9)  |     // Sample period is automatically controlled by the sample timer
+                 (0b0    << 8)  |     // Invert sample/hold signal; don't care
+                 (0b001  << 5)  |     // Divide by /2 extra
+                 (0b10   << 3)  |     // MCLK source
+                 (0b00   << 1));      // single-channel, single-conversion
+                                      // bit 0 is a read-only status bit.
+    ADC12CTL2 = ((0b01   << 4)  |     // 10-bit resolution
+                 (0b0    << 3)  |     // unsigned read-back
+                 (0b00   << 1)  |     // bits 2-1 are don't care read-only
+                 (0b1    << 0));      // enable low-power mode; clk is 125kHz, < 1/4th of 5.4MHz max
+    ADC12CTL3 = 0;                    // bits 5-15 are don't care, 0-4 are conversion start addresses
+
+    // memory location 0 should hold results from sampling channel A12
+    ADC12MCTL0 = ((0b0   << 14) |
+                  (0b0   << 13) |
+                  (0b0000<< 8)  |
+                  (0b0   << 7)  |
+                  (12 << 0));
+
+    ADC12IER0 = (1 << 0);
 }
 
 static void start_audio_dma(const uint8_t* src, int32_t len)
