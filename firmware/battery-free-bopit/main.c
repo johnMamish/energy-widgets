@@ -10,12 +10,12 @@
 static void init_hardware();
 static void start_audio_dma(const uint8_t* src, int32_t len);
 
-const uint8_t* action_sounds[] =
+/*const uint8_t* action_sounds[] =
 {
     __assets_bop_1_wav, __assets_bop_2_wav, __assets_bop_3_wav, __assets_bop_4_wav,
     __assets_shake_1_wav, __assets_shake_2_wav, __assets_shake_3_wav, __assets_shake_4_wav,
     __assets_twist_1_wav, __assets_twist_2_wav, __assets_twist_3_wav, __assets_twist_4_wav
-};
+    };*/
 
 const uint8_t* it_sounds[] =
 {
@@ -31,10 +31,69 @@ static void advance_lfsr(uint32_t* num)
     }
 }
 
+static uint8_t digit_to_hexchar(int digit)
+{
+    return (digit >= 10) ? ((digit - 10) + 'a') : (digit + '0');
+}
+
+static void u16_to_hex(uint16_t val, uint8_t* buf)
+{
+    for (int i = 3; i >= 0; i--) {
+        buf[i] = digit_to_hexchar(val & 0x000f);
+        val >>= 4;
+    }
+}
+
+static void puts_blocking(const uint8_t* s)
+{
+    for (int i = 0; s[i]; i++) { UCA0TXBUF = s[i]; while(UCA0STATW & (1 << 0)); }
+}
+
+
 int main()
 {
     init_hardware();
 
+    //const char* str = "hello, world!\r\n";
+    uint16_t j = 0;
+    uint16_t histogram[1024] = { 0 };
+    for (int i = 0; i < 1000; i++) {
+        // initiate an ADC conversion
+        ADC12CTL3 = 0;                    // bits 5-15 are don't care, 0-4 are conversion start addresses
+        P8OUT |= (1 << 1);
+        ADC12CTL0 |= (1 << 1) | (1 << 0);
+        while (!(ADC12IFGR0 & (1 << 0)));
+        P8OUT &= ~(1 << 1);
+        uint16_t result = ADC12MEM0;
+        histogram[result]++;
+    }
+
+    for (int i = 0; i < 1024; i++) {
+        static uint8_t buf[5] = { 0 };
+        if (histogram[i] != 0) {
+            u16_to_hex(i, buf); buf[4] = '\0'; puts_blocking(buf);
+            puts_blocking(": ");
+            for (int j = 0; j < histogram[i]; j += 5, puts_blocking("x"));
+            //u16_to_hex(histogram[i], buf); buf[4] = '\0'; puts_blocking(buf);
+            puts_blocking("\r\n");
+        }
+    }
+
+    while(1);
+#if 0
+    static uint8_t resultstr[] = "         \r\n";
+    u16_to_hex(result, resultstr);
+    u16_to_hex(j++, resultstr + 5);
+    for (int i = 0; resultstr[i]; i++) {
+        UCA0TXBUF = resultstr[i];
+        while(UCA0STATW & (1 << 0));
+    }
+
+    TA0CTL |= (1 << 2);
+    while(TA0R < 1000);
+#endif
+
+    #if 0
     uint32_t rando = 0xa5ce5b3a;
 
     uint16_t eighth_note_delay = 32767 - 10;
@@ -79,7 +138,7 @@ int main()
 
         eighth_note_delay -= 100;
     }
-
+#endif
     return -1;
 }
 
@@ -98,6 +157,23 @@ static void init_hardware()
     // by writing a key value to CSCTL0 first.
     CSCTL0  = (0xa5u << 8);
     CSCTL3 &= ~(0b111u << 4); CSCTL3 |= (0b000u << 4);
+
+    // enable uart:
+    //  * Pin P2.0 is connected to eUSCI_A0 TXD. It's the "txd" header connecting to the programmer
+    //    on the msp430 launchpad. Table 6-23 of the DATASHEET tells how to configure the output;
+    //    eUSCI_A0 is the "secondary function", so PxSEL<1:0> needs to be 0b10.
+    //  * use SMCLK (8MHz) for baud generation.
+    P2SEL1 |= (1 << 0);
+    UCA0CTLW0 |= (0b11 << 6);
+
+    // set the baud rate
+    //UCA0MCTLW = (0x20 << 8) | (10 << 4) | (1 << 0);
+    //UCA0BRW     = 6 * 8;
+    UCA0MCTLW = (0x55 << 8) | (5 << 4) | (1 << 0);
+    UCA0BRW = 4;
+
+    // enable the UART
+    UCA0CTLW0 &= ~(1 << 0);
 
     ////////////////////////////////////////////////////////////////
     // PWM for audio generation
@@ -191,16 +267,21 @@ static void init_hardware()
                  (0b0    << 3)  |     // unsigned read-back
                  (0b00   << 1)  |     // bits 2-1 are don't care read-only
                  (0b1    << 0));      // enable low-power mode; clk is 125kHz, < 1/4th of 5.4MHz max
-    ADC12CTL3 = 0;                    // bits 5-15 are don't care, 0-4 are conversion start addresses
 
     // memory location 0 should hold results from sampling channel A12
     ADC12MCTL0 = ((0b0   << 14) |
                   (0b0   << 13) |
                   (0b0000<< 8)  |
-                  (0b0   << 7)  |
+                  (0b1   << 7)  |     // End of sequence
                   (12 << 0));
 
     ADC12IER0 = (1 << 0);
+
+    // some GPIO pins for debugging: p8.1
+    P8SEL0 &= ~(1 << 1);
+    P8SEL1 &= ~(1 << 1);
+    P8DIR |= (1 << 1);
+    P8OUT &= ~(1 << 1);
 }
 
 static void start_audio_dma(const uint8_t* src, int32_t len)
