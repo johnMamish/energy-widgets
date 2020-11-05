@@ -10,12 +10,12 @@
 static void init_hardware();
 static void start_audio_dma(const uint8_t* src, int32_t len);
 
-/*const uint8_t* action_sounds[] =
+const uint8_t* action_sounds[] =
 {
     __assets_bop_1_wav, __assets_bop_2_wav, __assets_bop_3_wav, __assets_bop_4_wav,
     __assets_shake_1_wav, __assets_shake_2_wav, __assets_shake_3_wav, __assets_shake_4_wav,
     __assets_twist_1_wav, __assets_twist_2_wav, __assets_twist_3_wav, __assets_twist_4_wav
-    };*/
+};
 
 const uint8_t* it_sounds[] =
 {
@@ -36,7 +36,7 @@ static uint8_t digit_to_hexchar(int digit)
     return (digit >= 10) ? ((digit - 10) + 'a') : (digit + '0');
 }
 
-static void u16_to_hex(uint16_t val, uint8_t* buf)
+static void u16_to_hex(uint16_t val, char* buf)
 {
     for (int i = 3; i >= 0; i--) {
         buf[i] = digit_to_hexchar(val & 0x000f);
@@ -44,32 +44,67 @@ static void u16_to_hex(uint16_t val, uint8_t* buf)
     }
 }
 
-static void puts_blocking(const uint8_t* s)
+static void puts_blocking(const char* s)
 {
     for (int i = 0; s[i]; i++) { UCA0TXBUF = s[i]; while(UCA0STATW & (1 << 0)); }
 }
 
+static uint16_t adc_results[4];
+static volatile uint8_t adc_ready = 0;
+
+__attribute__((interrupt(ADC12_B_VECTOR)))
+void adc12_sample_interrupt()
+{
+    // We expect that adc12 only ever runs in autoscan mode, it should start at mem location 0 and
+    // end at mem location 3, so we check for the 'mem location 3 done' interrupt
+    if (ADC12IFGR0 & (1 << 3)) {
+        adc_results[0] = ADC12MEM0;
+        adc_results[1] = ADC12MEM1;
+        adc_results[2] = ADC12MEM2;
+        adc_results[3] = ADC12MEM3;
+        adc_ready = 1;
+        ADC12CTL0 &= ~(1 << 1);
+        ADC12CTL0 |= (1 << 1);
+    } else {
+        // unknown interrupt
+        while(1);
+    }
+}
 
 int main()
 {
     init_hardware();
 
+    // enable interrupts
+    _EINT();
+
     //const char* str = "hello, world!\r\n";
+#if 1
     uint16_t j = 0;
     uint16_t histogram[1024] = { 0 };
+    ADC12CTL0 |= (1 << 1);
     for (int i = 0; i < 1000; i++) {
         // initiate an ADC conversion
         ADC12CTL3 = 0;                    // bits 5-15 are don't care, 0-4 are conversion start addresses
         P8OUT |= (1 << 1);
-        ADC12CTL0 |= (1 << 1) | (1 << 0);
-        while (!(ADC12IFGR0 & (1 << 0)));
+        while (adc_ready == 0);
+        adc_ready = 0;
         P8OUT &= ~(1 << 1);
-        uint16_t result = ADC12MEM0;
+        uint16_t result = adc_results[0];
         histogram[result]++;
+
+        char resultstr[5] = { 0 };
+        u16_to_hex(adc_results[0], resultstr); puts_blocking(resultstr); puts_blocking(" ");
+        u16_to_hex(adc_results[1], resultstr); puts_blocking(resultstr); puts_blocking(" ");
+        u16_to_hex(adc_results[2], resultstr); puts_blocking(resultstr); puts_blocking(" ");
+        u16_to_hex(adc_results[3], resultstr); puts_blocking(resultstr); puts_blocking("\r\n");
+
+        /*TA0CTL |= (1 << 2);
+          while(TA0R < 10000);*/
     }
 
     for (int i = 0; i < 1024; i++) {
-        static uint8_t buf[5] = { 0 };
+        static char buf[5] = { 0 };
         if (histogram[i] != 0) {
             u16_to_hex(i, buf); buf[4] = '\0'; puts_blocking(buf);
             puts_blocking(": ");
@@ -78,8 +113,9 @@ int main()
             puts_blocking("\r\n");
         }
     }
-
     while(1);
+#endif
+
 #if 0
     static uint8_t resultstr[] = "         \r\n";
     u16_to_hex(result, resultstr);
@@ -184,7 +220,7 @@ static void init_hardware()
               (0b00u    <<  6) |      // Input divider is /1
               (0b10u    <<  4) |      // Timer counts in continuous mode; rolls over from 0xff to 0x00.
               (0b0u     <<  2) |      // Don't reset timer
-              (0b1u     <<  1) |      // interrupt enable
+              (0b0u     <<  1) |      // interrupt enable
               (0b0u     <<  0));      // interrupt pending flag
 
     // Channel 0 is responsible for triggering DMA and resetting channel outputs
@@ -216,14 +252,50 @@ static void init_hardware()
     P3DIR  |=  (1 << 4);
 
     ////////////////////////////////////////////////////////////////
-    // Set up a timer
+    // Set up a timer for general purpose timekeeping.
     TA0CTL = ((0b10u    <<  8) |      // Use SMCLK for timer
               (0b11u    <<  6) |      // Input divider is /8
               (0b10u    <<  4) |      // Timer counts in continuous mode; rolls over from 0xffff to 0x0000.
               (0b0u     <<  2) |      // Don't reset timer
-              (0b1u     <<  1) |      // interrupt enable
+              (0b0u     <<  1) |      // interrupt enable
               (0b0u     <<  0));      // interrupt pending flag
     TA0EX0 = (0b111 << 0);            // Divide by 8 again for a frequency of 125kHz.
+
+    ////////////////////////////////////////////////////////////////
+    // Use TA1 CCR1 to trigger the ADC at 1kHz
+    // It will be clocked at 125kHz with a period of 125.
+    TA1CTL = ((0b10u    <<  8) |      // Use SMCLK for timer
+              (0b11u    <<  6) |      // Input divider is /8
+              (0b01u    <<  4) |      // Timer counts in 'up mode', it goes from 0 to TA1CCR0
+              (0b0u     <<  2) |      // Don't reset timer
+              (0b0u     <<  1) |      // interrupt disabled
+              (0b0u     <<  0));      // interrupt pending flag
+    TA1EX0 = (0b111 << 0);            // Divide by 8 again for a frequency of 125kHz.
+
+    TA1CCTL0 = ((0b00u  << 14) |      // Capture mode is "no capture"
+                (0b10u  << 12) |      // Cap/Compare input select is don't care (but make it GND)
+                (0b0u   << 11) |      // Synchronize capture source is don't care.
+                (0b00u  <<  9) |      // TA1CL0 loads immediately when CCR0 is written.
+                (0b0u   <<  8) |      // Compare mode
+                (0b000u <<  5) |      // Output mode is don't care.
+                (0b0u   <<  4) |      // Capture/Compare interrupt enable
+                (0b0000u << 0));      // Bottom 4 bits are all don't care.
+    TA1CCR0 = 32500;
+
+    TA1CCTL1 = ((0b00u  << 14) |      // Capture mode is "no capture"
+                (0b10u  << 12) |      // Cap/Compare input select is don't care (but make it GND)
+                (0b0u   << 11) |      // Synchronize capture source is don't care.
+                (0b00u  <<  9) |      // TA1CL3 loads immediately when CCR0 is written.
+                (0b0u   <<  8) |      // Compare mode
+                (0b011u <<  5) |      // Output mode is 'set/reset'
+                (0b0u   <<  4) |      // Capture/Compare interrupt enable
+                (0b0000u << 0));      // Bottom 4 bits are all don't care.
+    TA1CCR1 = (32500 / 2);
+
+    // Pin P1.2 is connected to TA1.1
+    P1SEL0 |=  (1 << 2);
+    P1SEL1 &= ~(1 << 2);
+    P1DIR  |=  (1 << 2);
 
     ////////////////////////////////////////////////////////////////
     // Set up DMA channel 1 to copy from FRAM to timer
@@ -250,18 +322,18 @@ static void init_hardware()
     P3SEL1 |= (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3);
     ADC12CTL0 = ((0b0000 << 12) |     // ADC samp/hold time 1 is 4 ADC clocks
                  (0b0000 << 8)  |     // ADC samp/hold time 2 is 4 ADC clocks
-                 (0b0    << 7)  |     // Don't run continuously
+                 (0b1    << 7)  |     // ADC12MSC
                  (0b1    << 4)  |     // Turn ADC on
                  (0b0    << 1)  |     // Don't enable or start conversions yet
                  (0b0    << 0));
 
     ADC12CTL1 = ((0b10   << 13) |     // Pre-divide by 32 for an input clock of 250kHz
-                 (0b000  << 10) |     // Sample hold source select is software-triggered (?)
+                 (0b100  << 10) |     // SHSx is TA1 CCR1
                  (0b1    << 9)  |     // Sample period is automatically controlled by the sample timer
                  (0b0    << 8)  |     // Invert sample/hold signal; don't care
                  (0b001  << 5)  |     // Divide by /2 extra
                  (0b10   << 3)  |     // MCLK source
-                 (0b00   << 1));      // single-channel, single-conversion
+                 (0b01   << 1));      // single-channel, single-conversion
                                       // bit 0 is a read-only status bit.
     ADC12CTL2 = ((0b01   << 4)  |     // 10-bit resolution
                  (0b0    << 3)  |     // unsigned read-back
@@ -269,13 +341,12 @@ static void init_hardware()
                  (0b1    << 0));      // enable low-power mode; clk is 125kHz, < 1/4th of 5.4MHz max
 
     // memory location 0 should hold results from sampling channel A12
-    ADC12MCTL0 = ((0b0   << 14) |
-                  (0b0   << 13) |
-                  (0b0000<< 8)  |
-                  (0b1   << 7)  |     // End of sequence
-                  (12 << 0));
+    ADC12MCTL0 = (0b0 << 7) | (12 << 0);
+    ADC12MCTL1 = (0b0 << 7) | (13 << 0);
+    ADC12MCTL2 = (0b0 << 7) | (14 << 0);
+    ADC12MCTL3 = (0b1 << 7) | (15 << 0);
 
-    ADC12IER0 = (1 << 0);
+    ADC12IER0 = (1 << 3);
 
     // some GPIO pins for debugging: p8.1
     P8SEL0 &= ~(1 << 1);
