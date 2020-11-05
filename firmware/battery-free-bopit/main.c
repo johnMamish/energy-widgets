@@ -65,6 +65,7 @@ void adc12_sample_interrupt()
         adc_ready = 1;
         ADC12CTL0 &= ~(1 << 1);
         ADC12CTL0 |= (1 << 1);
+        _low_power_mode_off_on_exit();
     } else {
         // unknown interrupt
         while(1);
@@ -81,23 +82,24 @@ int main()
     //const char* str = "hello, world!\r\n";
 #if 1
     uint16_t j = 0;
-    uint16_t histogram[1024] = { 0 };
+    volatile uint16_t histogram[1024] = { 0 };
     ADC12CTL0 |= (1 << 1);
-    for (int i = 0; i < 1000; i++) {
+    for (int i = 0; i < 0x7fff; i++) {
         // initiate an ADC conversion
         ADC12CTL3 = 0;                    // bits 5-15 are don't care, 0-4 are conversion start addresses
         P8OUT |= (1 << 1);
-        while (adc_ready == 0);
+        if ((i & 0x3ff) < 0x1ff) {while(adc_ready == 0);}
+        else { while(adc_ready == 0) { __low_power_mode_0(); }}
         adc_ready = 0;
         P8OUT &= ~(1 << 1);
         uint16_t result = adc_results[0];
         histogram[result]++;
 
         char resultstr[5] = { 0 };
-        u16_to_hex(adc_results[0], resultstr); puts_blocking(resultstr); puts_blocking(" ");
-        u16_to_hex(adc_results[1], resultstr); puts_blocking(resultstr); puts_blocking(" ");
-        u16_to_hex(adc_results[2], resultstr); puts_blocking(resultstr); puts_blocking(" ");
-        u16_to_hex(adc_results[3], resultstr); puts_blocking(resultstr); puts_blocking("\r\n");
+        //u16_to_hex(adc_results[0], resultstr); puts_blocking(resultstr); puts_blocking(" ");
+        //u16_to_hex(adc_results[1], resultstr); puts_blocking(resultstr); puts_blocking(" ");
+        //u16_to_hex(adc_results[2], resultstr); puts_blocking(resultstr); puts_blocking(" ");
+        //u16_to_hex(adc_results[3], resultstr); puts_blocking(resultstr); puts_blocking("\r\n");
 
         /*TA0CTL |= (1 << 2);
           while(TA0R < 10000);*/
@@ -194,6 +196,13 @@ static void init_hardware()
     CSCTL0  = (0xa5u << 8);
     CSCTL3 &= ~(0b111u << 4); CSCTL3 |= (0b000u << 4);
 
+    // By default the CPU core clock (MCLK) is 8MHz / 8. We can keep it that way, or we can divide
+    // it even further to save power on DMA and CPU (maybe ??)
+     CSCTL3 &= ~(0b111u << 0); CSCTL3 |= (0x3u << 0);
+
+    // make sure that the MCLKREQEN bit is set (should be set anyways after BOR)
+    CSCTL6 |= (1 << 1);
+
     // enable uart:
     //  * Pin P2.0 is connected to eUSCI_A0 TXD. It's the "txd" header connecting to the programmer
     //    on the msp430 launchpad. Table 6-23 of the DATASHEET tells how to configure the output;
@@ -280,7 +289,7 @@ static void init_hardware()
                 (0b000u <<  5) |      // Output mode is don't care.
                 (0b0u   <<  4) |      // Capture/Compare interrupt enable
                 (0b0000u << 0));      // Bottom 4 bits are all don't care.
-    TA1CCR0 = 32500;
+    TA1CCR0 = 125;
 
     TA1CCTL1 = ((0b00u  << 14) |      // Capture mode is "no capture"
                 (0b10u  << 12) |      // Cap/Compare input select is don't care (but make it GND)
@@ -290,7 +299,7 @@ static void init_hardware()
                 (0b011u <<  5) |      // Output mode is 'set/reset'
                 (0b0u   <<  4) |      // Capture/Compare interrupt enable
                 (0b0000u << 0));      // Bottom 4 bits are all don't care.
-    TA1CCR1 = (32500 / 2);
+    TA1CCR1 = (125 / 2);
 
     // Pin P1.2 is connected to TA1.1
     P1SEL0 |=  (1 << 2);
@@ -332,7 +341,7 @@ static void init_hardware()
                  (0b1    << 9)  |     // Sample period is automatically controlled by the sample timer
                  (0b0    << 8)  |     // Invert sample/hold signal; don't care
                  (0b001  << 5)  |     // Divide by /2 extra
-                 (0b10   << 3)  |     // MCLK source
+                 (0b11   << 3)  |     // SMCLK source: 8MHz
                  (0b01   << 1));      // single-channel, single-conversion
                                       // bit 0 is a read-only status bit.
     ADC12CTL2 = ((0b01   << 4)  |     // 10-bit resolution
