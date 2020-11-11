@@ -137,6 +137,8 @@ eagle.epf
 *.crc
 *.crs
 *.zip
+*.mnb
+*.mnt
 
 *.dri
 *.drl
