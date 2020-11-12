@@ -24,11 +24,13 @@ constant current model netlist
 *******
 .subckt current_sink pos neg Isys=1m Vsys=2
     V1 pos pos1 0
-    B1 pos1 neg I = V(pos,neg) > Vsys ? Isys : 0
+
+    B1 pos1 neg I = V(pos,neg) >= (Vsys+1e-3) ? Isys : V(pos,neg) <= Vsys ? 0 : ((V(pos,neg) - Vsys) / 1e-3)*Isys
     B2 efficency gnd V = Vsys / V(pos,neg)
     B3 pgood gnd V = I(V1) * V(pos,neg) * V(efficency)
 .ends current_sink
 
+.options reltol=0.1 abstol=1e-3 vntol=0.1e-3
 
 *** The harvester consists of a piecewise voltage source in series with a 260 ohm resistor.
 *** Its output nodes are 'harvest0' and 'harvest1'
@@ -40,20 +42,24 @@ Rharvest harvestint1 harvest1 260
 X1 harvest1 harvest0 capout gnd rectifier
 
 *** Harvest capacitor and resistor to draw charge off of it
-C1 capout gnd 200u
-X2 capout gnd current_sink Isys=10m Vsys=2
+C1 capout gnd 300u
+Vsysammeter capout capoutsys 0
+X2 capoutsys gnd current_sink Isys=1m Vsys=2
 
 *** Integrate power
 *ESENS vs gnd X2.pgood gnd 1
 A1 %v(X2.pgood) harvested_energy integrator
 .model integrator int(in_offset=0.0 gain=1 out_lower_limit=-1e12 out_upper_limit=1e12 limit_range=1e-9 out_ic=0.0)
 
+.measure tran vtest find v(harvested_energy) AT=999ms
+
 *** Transient simulation of 300 milliseconds at timestep of 1u
 .control
-    tran 1us 500ms
+    tran 10us 1000ms
     plot harvestint1 harvest1 capout
     plot X2.pgood
     plot harvested_energy
+    plot I(Vsysammeter)
 .endc
 
 .end
