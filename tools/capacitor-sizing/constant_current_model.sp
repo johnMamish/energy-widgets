@@ -21,9 +21,10 @@ constant current model
 *******
 .subckt lc in gnd out
     L1 in outrl 0
-    RL1 outrl out 10m
-    C1 outcl gnd 10u
-    RC1 outcl out 10m
+    RL1 outrl out 100m
+    Rg out gnd 100M
+    C1 outcl gnd 1u
+    RC1 outcl out 0m
 .ends lc
 
 *******
@@ -35,7 +36,7 @@ constant current model
 .subckt current_sink pos neg Isys=1m Vsys=2
     * If the current is a step function, it results in a badly conditioned simulation
     * This step voltage source is fed into a low-pass LC filter whose output controls the current
-    Bvctl vctlstep gnd V = V(pos,neg) >= Vsys ? 1 : 0
+    Bvctl vctlstep gnd V = (V(pos,neg) >= Vsys) ? 1 : 0
     X1 vctlstep gnd vctl lc
 
     * ammeter for I-source modelling system
@@ -48,8 +49,6 @@ constant current model
     B2 efficency gnd V = Vsys / V(pos,neg)
     B3 pgood gnd V = I(V1) * V(pos,neg) * V(efficency)
 .ends current_sink
-
-*.options reltol=0.1 abstol=1e-3 vntol=0.1e-3
 
 *** The harvester consists of a piecewise voltage source in series with a 260 ohm resistor.
 *** Its output nodes are 'harvest0' and 'harvest1'
@@ -73,21 +72,46 @@ A1 %v(X2.pgood) harvested_energy integrator
 
 .measure tran vtest find v(harvested_energy) AT=999ms
 
+.options NOACCT ITL4=200
+
 *** Transient simulation of 300 milliseconds at timestep of 1u
 .control
-    let loop = [0 0]
-    while (loop[0] < 3)
-        let c_val = 10u + (loop[0] * 10u)
-        alter Charvest c_val
-        echo within while loop "$&loop: Tran results"
+    let capval = 0.00001
+    let capstep = 0.00001
+    let harvested_energies = unitvec(100)
+    let capvals = unitvec(100)
+    let count = 0
+    while (count < 100)
+        ** set capacitance value and record it in array
+        alter Charvest capval
+        let capvals[count] = capval
+        echo "capval is $&capval"
+
+        ** run transient simulation
         tran 10u 1000m
-        run
-        *plot harvestint1 harvest1 capout
-        *plot X2.pgood
-        *plot harvested_energy
-        *plot I(Vsysammeter)
-        let loop[0] = loop[0] + 1
+
+        ** record results in vector
+        let harvested_energies[count] = harvested_energy[length(harvested_energy) - 1]
+
+        ** increment
+        let capval = capval + capstep
+        let count = count + 1
+
+        *plot X2.vctlstep
     end
+
+    *print harvested_energies
+
+    setplot new
+    set curplotname = capplots
+    *setscale capvals
+    plot harvested_energies vs capvals
+
+    plot harvestint1 harvest1 capout
+    plot X2.pgood
+    plot harvested_energy
+    plot I(Vsysammeter)
+    plot X2.vctlstep
 .endc
 
 .end
