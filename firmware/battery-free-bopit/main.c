@@ -4,11 +4,34 @@
 
 #include "audio_samples.h"
 
+// fixed-point integer type
+typedef uint32_t q24_8_t;
+
+// Gain of MAX9938 current sense
+// 25 * 256 = 6400
+const q24_8_t ISENSEGAIN_Q24_8 = 6400;
+
+// Resistance of current sense resistor on MAX9938
+// 3.33... * 256 = 853.333..
+const q24_8_t RSENSE_Q24_8 = 853;
+
+// multiplication factor of resistor divider on output of harvester
+// (150 / (150 + 1000)) * 256 = 33.39
+const q24_8_t RDIV_FACTOR_Q24_8 = 33;
+
+// source resistances: 260 and 240 for motor and 'faraday flashlight' respectively
+const q24_8_t MOTOR_RWIND_Q24_8 = 66560;
+const q24_8_t SHAKER_RWIND_Q24_8 = 61440;
+
+// 2 * 256 = 512
+const q24_8_t VCC_Q24_8 = 512;
+
 /**
  * Convenience function that all of the hardware init functions are being dumped into
  */
 static void init_hardware();
 static void start_audio_dma(const uint8_t* src, int32_t len);
+
 
 const uint8_t* action_sounds[] =
 {
@@ -49,6 +72,17 @@ static void puts_blocking(const char* s)
     for (int i = 0; s[i]; i++) { UCA0TXBUF = s[i]; while(UCA0STATW & (1 << 0)); }
 }
 
+static q24_8_t calculate_voc(uint16_t adc_isense, uint16_t adc_vsense, q24_8_t rwind)
+{
+    q24_8_t Ih = ((adc_isense * VCC_Q24_8) / ((RSENSE_Q24_8 * ISENSEGAIN_Q24_8) >> 8));
+    q24_8_t Vh = ((adc_vsense * VCC_Q24_8) / (RDIV_FACTOR_Q24_8));
+    return (Vh + ((Ih * rwind) >> 8));
+}
+
+/**
+ * adc_results[0,2] are current for motor and shaker, respectively
+ * adc_results[1,3] are voltage
+ */
 static uint16_t adc_results[4];
 static volatile uint8_t adc_ready = 0;
 
@@ -65,7 +99,6 @@ void adc12_sample_interrupt()
         adc_ready = 1;
         ADC12CTL0 &= ~(1 << 1);
         ADC12CTL0 |= (1 << 1);
-        _low_power_mode_off_on_exit();
     } else {
         // unknown interrupt
         while(1);
@@ -85,36 +118,38 @@ int main()
     volatile uint16_t histogram[1024] = { 0 };
     ADC12CTL0 |= (1 << 1);
     for (int i = 0; i < 0x7fff; i++) {
-        // initiate an ADC conversion
-        ADC12CTL3 = 0;                    // bits 5-15 are don't care, 0-4 are conversion start addresses
-        P8OUT |= (1 << 1);
-        if ((i & 0x3ff) < 0x1ff) {while(adc_ready == 0);}
-        else { while(adc_ready == 0) { __low_power_mode_0(); }}
+        // wait for interrupt to deliver ADC conversion results
+        while(adc_ready == 0);
         adc_ready = 0;
+
+
         P8OUT &= ~(1 << 1);
         uint16_t result = adc_results[0];
         histogram[result]++;
 
-        char resultstr[5] = { 0 };
-        //u16_to_hex(adc_results[0], resultstr); puts_blocking(resultstr); puts_blocking(" ");
-        //u16_to_hex(adc_results[1], resultstr); puts_blocking(resultstr); puts_blocking(" ");
-        //u16_to_hex(adc_results[2], resultstr); puts_blocking(resultstr); puts_blocking(" ");
-        //u16_to_hex(adc_results[3], resultstr); puts_blocking(resultstr); puts_blocking("\r\n");
+        uint16_t voc_motor = (uint16_t)calculate_voc(adc_results[0], adc_results[1], MOTOR_RWIND_Q24_8);
+        uint16_t voc_shaker = (uint16_t)calculate_voc(adc_results[2], adc_results[3], SHAKER_RWIND_Q24_8);
+
+        if (voc_motor > (2 * 256)) {
+            P1OUT |= (1 << 1);
+        } else {
+            P1OUT &= ~(1 << 1);
+        }
+
+        if (voc_shaker > (2 * 256)) {
+            P1OUT |= (1 << 0);
+        } else {
+            P1OUT &= ~(1 << 0);
+        }
+
+        //char resultstr[5] = { 0 };
+        //u16_to_hex(voc_motor, resultstr); puts_blocking(resultstr); puts_blocking(" ");
+        //u16_to_hex(voc_shaker, resultstr); puts_blocking(resultstr); puts_blocking("\r\n");
 
         /*TA0CTL |= (1 << 2);
           while(TA0R < 10000);*/
     }
 
-    for (int i = 0; i < 1024; i++) {
-        static char buf[5] = { 0 };
-        if (histogram[i] != 0) {
-            u16_to_hex(i, buf); buf[4] = '\0'; puts_blocking(buf);
-            puts_blocking(": ");
-            for (int j = 0; j < histogram[i]; j += 5, puts_blocking("x"));
-            //u16_to_hex(histogram[i], buf); buf[4] = '\0'; puts_blocking(buf);
-            puts_blocking("\r\n");
-        }
-    }
     while(1);
 #endif
 
@@ -131,7 +166,7 @@ int main()
     while(TA0R < 1000);
 #endif
 
-    #if 0
+#if 0
     uint32_t rando = 0xa5ce5b3a;
 
     uint16_t eighth_note_delay = 32767 - 10;
@@ -191,6 +226,10 @@ static void init_hardware()
 
     // todo: make all pins pulldown for power saving (see 12.3.2)
 
+    // leds P1.0 and P1.1 for debug
+    P1OUT = 0;
+    P1DIR |= (1 << 1) | (1 << 0);
+
     // Change SMCLK to be 8MHz / 1 instead of 8MHz / 8. Clock control registers need to be unlocked
     // by writing a key value to CSCTL0 first.
     CSCTL0  = (0xa5u << 8);
@@ -198,7 +237,7 @@ static void init_hardware()
 
     // By default the CPU core clock (MCLK) is 8MHz / 8. We can keep it that way, or we can divide
     // it even further to save power on DMA and CPU (maybe ??)
-     CSCTL3 &= ~(0b111u << 0); CSCTL3 |= (0x3u << 0);
+    CSCTL3 &= ~(0b111u << 0); CSCTL3 |= (0x3u << 0);
 
     // make sure that the MCLKREQEN bit is set (should be set anyways after BOR)
     CSCTL6 |= (1 << 1);
@@ -344,7 +383,7 @@ static void init_hardware()
                  (0b11   << 3)  |     // SMCLK source: 8MHz
                  (0b01   << 1));      // single-channel, single-conversion
                                       // bit 0 is a read-only status bit.
-    ADC12CTL2 = ((0b01   << 4)  |     // 10-bit resolution
+    ADC12CTL2 = ((0b00   << 4)  |     // 8-bit resolution
                  (0b0    << 3)  |     // unsigned read-back
                  (0b00   << 1)  |     // bits 2-1 are don't care read-only
                  (0b1    << 0));      // enable low-power mode; clk is 125kHz, < 1/4th of 5.4MHz max
