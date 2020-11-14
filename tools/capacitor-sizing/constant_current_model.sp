@@ -1,6 +1,7 @@
 constant current model
 
 .include lib/1N4148.lib
+.include lib/CDBHD140L_G.lib
 
 *******
 * This subcircuit is a full-bridge rectifier
@@ -58,7 +59,7 @@ asrc %vd([harvestint1 harvest0]) filesrc
 Rharvest harvestint1 harvest1 260
 
 *** Instantiate rectifier
-X1 harvest1 harvest0 capout gnd rectifier
+X1 harvest1 harvest0 capout gnd CDBHD140L_G
 
 *** Harvest capacitor and resistor to draw charge off of it
 Charvest capout gnd 300u
@@ -72,7 +73,7 @@ A1 %v(X2.pgood) harvested_energy integrator
 
 .measure tran vtest find v(harvested_energy) AT=999ms
 
-.options NOACCT ITL4=200
+.option ABSTOL=10n
 
 *** Transient simulation of 300 milliseconds at timestep of 1u
 .control
@@ -88,7 +89,7 @@ A1 %v(X2.pgood) harvested_energy integrator
         echo "capval is $&capval"
 
         ** run transient simulation
-        tran 10u 1000m
+        tran 10u 2000m
 
         ** record results in vector
         let harvested_energies[count] = harvested_energy[length(harvested_energy) - 1]
@@ -100,7 +101,7 @@ A1 %v(X2.pgood) harvested_energy integrator
         *plot X2.vctlstep
     end
 
-    *print harvested_energies
+    print harvested_energies
 
     setplot new
     set curplotname = capplots

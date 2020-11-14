@@ -1,0 +1,44 @@
+*******************
+* CDBHD140L-G
+* Comchip semiconductor
+*
+* Library by John Mamish, using guide at www.youspice.com/spice-modeling-of-a-diode-from-datasheet/
+* for help modelling from comchip dataheet
+*
+*
+**********************
+
+.SUBCKT CDBHD140L_G_schottky 1 2
+    D1 1 2 CDBHD140L_G_schottky
+    .MODEL CDBHD140L_G_schottky D
+*+ BV =
+*+ CJO = don't care
++ EG = 0.7             ; because schottky diode
+*+ FC =
+*+ IBLV =
+*+ IBV =
+*+ IKF =
++ IS = 1.45m           ; eyeballed I-V slope from logarithmic graph in datasheet
+*+ ISR =
++ M = 0.5
++ N = 2.35
+*+ NR =
++ RS = 50m
+*+ TT =
++ VJ = 400m            ; educated guess from forward voltage
+*+ XTI =
+.ends CDBHD140L_G_schottky
+
+
+*******
+*     ac0    one of the 2 non-polarized ac inputs
+*     ac1    one of the 2 non-polarized ac inputs
+*     outp   positive rectified output
+*     outn   negative rectified output (probably wanna connect this one to ground)
+*******
+.subckt CDBHD140L_G ac0 ac1 outp outn
+    X1 ac1 outp CDBHD140L_G_schottky
+    X2 ac0 outp CDBHD140L_G_schottky
+    X3 outn ac1 CDBHD140L_G_schottky
+    X4 outn ac0 CDBHD140L_G_schottky
+.ends CDBHD140L_G
