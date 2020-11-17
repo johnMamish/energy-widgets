@@ -3,6 +3,7 @@
 #include <stdint.h>
 
 #include "audio_samples.h"
+#include "game.h"
 
 // fixed-point integer type
 typedef uint32_t q24_8_t;
@@ -83,7 +84,7 @@ static q24_8_t calculate_voc(uint16_t adc_isense, uint16_t adc_vsense, q24_8_t r
  * adc_results[0,2] are current for motor and shaker, respectively
  * adc_results[1,3] are voltage
  */
-static uint16_t adc_results[4];
+static volatile uint16_t adc_results[4];
 static volatile uint8_t adc_ready = 0;
 
 __attribute__((interrupt(ADC12_B_VECTOR)))
@@ -112,12 +113,35 @@ int main()
     // enable interrupts
     _EINT();
 
-    //const char* str = "hello, world!\r\n";
+    bopit_gamestate_t gs;
+    bopit_init(&gs);
+
+    uint16_t eighth_note_delay = 32767 - 10;
+    TA0CTL |= (1 << 2);
+    uint16_t tnow = TA0R;
+    while(1) {
+        uint16_t tprev = tnow;
+        tnow = TA0R;
+
+        _DINT();
+        uint16_t adcnow[4] = {adc_results[0], adc_results[1], adc_results[2], adc_results[3]};
+        _EINT();
+        uint16_t voc_motor = (uint16_t)calculate_voc(adc_results[0], adc_results[1], MOTOR_RWIND_Q24_8);
+        uint16_t voc_shaker = (uint16_t)calculate_voc(adc_results[2], adc_results[3], SHAKER_RWIND_Q24_8);
+
+        bopit_update_state(&gs, (bopit_user_input_t[]){{voc_motor, voc_shaker, 0}}, tnow - tprev);
+
+        const audio_clip_t* clip = get_pending_audio_clip(&gs);
+        if (clip) {
+            start_audio_dma(clip->audio, clip->audio_len);
+        }
+    }
+
 #if 1
     uint16_t j = 0;
     volatile uint16_t histogram[1024] = { 0 };
     ADC12CTL0 |= (1 << 1);
-    for (int i = 0; i < 0x7fff; i++) {
+    while (1) {
         // wait for interrupt to deliver ADC conversion results
         while(adc_ready == 0);
         adc_ready = 0;
@@ -141,76 +165,9 @@ int main()
         } else {
             P1OUT &= ~(1 << 0);
         }
-
-        //char resultstr[5] = { 0 };
-        //u16_to_hex(voc_motor, resultstr); puts_blocking(resultstr); puts_blocking(" ");
-        //u16_to_hex(voc_shaker, resultstr); puts_blocking(resultstr); puts_blocking("\r\n");
-
-        /*TA0CTL |= (1 << 2);
-          while(TA0R < 10000);*/
     }
 
     while(1);
-#endif
-
-#if 0
-    static uint8_t resultstr[] = "         \r\n";
-    u16_to_hex(result, resultstr);
-    u16_to_hex(j++, resultstr + 5);
-    for (int i = 0; resultstr[i]; i++) {
-        UCA0TXBUF = resultstr[i];
-        while(UCA0STATW & (1 << 0));
-    }
-
-    TA0CTL |= (1 << 2);
-    while(TA0R < 1000);
-#endif
-
-#if 0
-    uint32_t rando = 0xa5ce5b3a;
-
-    uint16_t eighth_note_delay = 32767 - 10;
-    TA0CTL |= (1 << 2);
-
-    while(1) {
-        for (uint8_t i = 0; i < 16; i++, advance_lfsr(&rando));
-
-        // "bop it"
-        for (uint8_t i = 0; i < 4; i++, advance_lfsr(&rando));
-        int idx = (rando & 0x07);
-        for (uint8_t i = 0; i < 2; i++, advance_lfsr(&rando));
-        idx += (rando & 0x03);
-        TA0CTL |= (1 << 2);
-        start_audio_dma((eighth_note_delay < 25000) ? action_sounds[4] : action_sounds[idx], __assets_bop_1_wav_size);
-        //while(DMA1CTL & (1 << 4));
-        while(TA0R < (eighth_note_delay));
-
-        for (uint8_t i = 0; i < 2; i++, advance_lfsr(&rando));
-        idx = rando & 0x03;
-        TA0CTL |= (1 << 2);
-        start_audio_dma(it_sounds[idx], __assets_it_3_wav_size);
-        while(TA0R < (eighth_note_delay));
-
-        // hi-hat
-        TA0CTL |= (1 << 2);
-        start_audio_dma(__assets_Closed_Hi_Hat_5_wav, __assets_Closed_Hi_Hat_5_wav_size);
-        while(TA0R < (eighth_note_delay * 2));
-
-         // bass kicks
-        TA0CTL |= (1 << 2);
-        start_audio_dma(__assets_dry_kick_wav, __assets_dry_kick_wav_size);
-        while(TA0R < (eighth_note_delay));
-        TA0CTL |= (1 << 2);
-        start_audio_dma(__assets_dry_kick_wav, __assets_dry_kick_wav_size);
-        while(TA0R < (eighth_note_delay));
-
-        // hi-hat
-        TA0CTL |= (1 << 2);
-        start_audio_dma(__assets_Closed_Hi_Hat_5_wav, __assets_Closed_Hi_Hat_5_wav_size);
-        while(TA0R < (eighth_note_delay * 2));
-
-        eighth_note_delay -= 100;
-    }
 #endif
     return -1;
 }

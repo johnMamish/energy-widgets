@@ -70,7 +70,7 @@ const audio_clip_t closed_hi_hat_clip = { __assets_Closed_Hi_Hat_5_wav, __assets
 bopit_user_input {
     uint16_t motor_voc_q8_8;
     uint16_t shaker_voc_q8_8;
-    int button;
+    unsigned int button;
 } bopit_user_input_t;
 
 /**
@@ -110,13 +110,13 @@ uint16_t shaker_hystersis[] = { 0x500, 0x200 };
 
 
 typedef struct bopit_gamestate {
-    uint32_t t_now;x
-    uint32_t t_next_beat;x
+    int32_t t_now;
+    int32_t t_next_beat;
 
     /**
      * 0 if the game is still active, 1 if the player has lost
      */
-    int lost;x
+    int lost;
 
     /**
      * Holds the next expected action. Generated on beat 2 of each measure after a successful user
@@ -125,8 +125,8 @@ typedef struct bopit_gamestate {
     uint16_t ms_per_eighth_note;
     uint16_t measure_number;
     bopit_action_e expected_action;
-    uint32_t t_this_action;
-    uint32_t action_window;                 // tolerance in time-domain for beat detection
+    int32_t t_this_action;
+    int32_t action_window;                 // tolerance in time-domain for beat detection
     beat_enum_e beat_state;
 
     /**
@@ -137,7 +137,11 @@ typedef struct bopit_gamestate {
     /**
      * Variables for keeping track of previous UI state
      */
-    int motor_state_prev, shaker_state_prev, button_state_prev;
+    debounce_state_t bop_debouncer;
+    bool button_prev, motor_prev, shaker_prev;
+    int32_t tlastedge_button;
+    int32_t tlastedge_motor;
+    int32_t tlastedge_shaker;
 
     /**
      * If this is null, there's no sound ready to play.
@@ -150,7 +154,7 @@ void bopit_init(bopit_gamestate_t* gs);
 /**
  *
  */
-void bopit_update_state(bopit_gamestate_t* gs, const bopit_user_input_t input, uint16_tuint32_t dt_ms);
+void bopit_update_state(bopit_gamestate_t* gs, const bopit_user_input_t* input, int16_t dt_ms);
 
 /**
  *
