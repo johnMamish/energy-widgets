@@ -55,6 +55,7 @@ static void advance_lfsr(uint32_t* num)
     }
 }
 
+#if 0
 static uint8_t digit_to_hexchar(int digit)
 {
     return (digit >= 10) ? ((digit - 10) + 'a') : (digit + '0');
@@ -72,6 +73,7 @@ static void puts_blocking(const char* s)
 {
     for (int i = 0; s[i]; i++) { UCA0TXBUF = s[i]; while(UCA0STATW & (1 << 0)); }
 }
+#endif
 
 static q24_8_t calculate_voc(uint16_t adc_isense, uint16_t adc_vsense, q24_8_t rwind)
 {
@@ -116,7 +118,7 @@ int main()
     bopit_gamestate_t gs;
     bopit_init(&gs);
 
-    uint16_t eighth_note_delay = 32767 - 10;
+    //uint16_t eighth_note_delay = 32767 - 10;
     TA0CTL |= (1 << 2);
     uint16_t tnow = TA0R;
     while(1) {
@@ -126,8 +128,8 @@ int main()
         _DINT();
         uint16_t adcnow[4] = {adc_results[0], adc_results[1], adc_results[2], adc_results[3]};
         _EINT();
-        uint16_t voc_motor = (uint16_t)calculate_voc(adc_results[0], adc_results[1], MOTOR_RWIND_Q24_8);
-        uint16_t voc_shaker = (uint16_t)calculate_voc(adc_results[2], adc_results[3], SHAKER_RWIND_Q24_8);
+        uint16_t voc_motor = (uint16_t)calculate_voc(adcnow[0], adcnow[1], MOTOR_RWIND_Q24_8);
+        uint16_t voc_shaker = (uint16_t)calculate_voc(adcnow[2], adcnow[3], SHAKER_RWIND_Q24_8);
 
         bopit_update_state(&gs, (bopit_user_input_t[]){{voc_motor, voc_shaker, 0}}, tnow - tprev);
 
@@ -138,7 +140,6 @@ int main()
     }
 
 #if 1
-    uint16_t j = 0;
     volatile uint16_t histogram[1024] = { 0 };
     ADC12CTL0 |= (1 << 1);
     while (1) {
