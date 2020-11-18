@@ -51,6 +51,7 @@ typedef struct bopit_gamestate {
     uint16_t measure_number;
     bopit_action_e expected_action;
     int32_t t_this_action;
+    int32_t t_measure_start;
     int32_t action_window;                 // tolerance in time-domain for beat detection
     beat_enum_e beat_state;
 

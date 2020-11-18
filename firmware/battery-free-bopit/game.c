@@ -64,17 +64,20 @@ void bopit_init(bopit_gamestate_t* gs)
 {
     gs->t_now = 0;
     gs->t_next_beat = 0;
+    gs->t_measure_start = -((int32_t)gs->ms_per_eighth_note) * 4;
     gs->lost = 0;
 
     gs->ms_per_eighth_note = speed_schedule[0][1];
     gs->measure_number = 0;
     gs->expected_action = BOPIT_ACTION_TWIST;
     gs->action_window = 100;                    // 100 milliseconds of slop for UI is ~16th note @ 120bpm
-    gs->t_this_action = 0x7ffffff - gs->action_window; // unreachably far in the future to initialize
+    gs->t_this_action = gs->t_measure_start + 10 * gs->ms_per_eighth_note;
     gs->beat_state = BEAT_ENUM_BEAT_2;
 
     gs->lfsr = 0xa5ce5b3a;  // TODO: seed properly
-    for (int i = 0; i < sizeof(gs->bop_debouncer); ((uint8_t*)(&gs->bop_debouncer))[i++] = 0);
+    gs->bop_debouncer.prev_sample = false; gs->bop_debouncer.last_edge_time = 0;
+    gs->bop_debouncer.button_out = false;
+    //for (int i = 0; i < sizeof(gs->bop_debouncer); ((uint8_t*)(&gs->bop_debouncer))[i++] = 0);
     gs->bop_debouncer.debounce_interval = 10;
     gs->motor_prev = 0;
     gs->shaker_prev = 0;
@@ -124,14 +127,15 @@ void bopit_update_state(bopit_gamestate_t* gs, const bopit_user_input_t* input, 
         gs->beat_state++;
         if (gs->beat_state == BEAT_ENUM_NUM_BEATS) {
             gs->beat_state = BEAT_ENUM_BEAT_1;
+            gs->t_measure_start = gs->t_next_beat;
         }
 
         // speed up if appropriate
         if (gs->beat_state == BEAT_ENUM_BEAT_1) {
             gs->measure_number++;
             int sched_slot;
-            for (sched_slot = 0; speed_schedule[sched_slot][0] > gs->measure_number; sched_slot++);
-            gs->ms_per_eighth_note = speed_schedule[sched_slot][1];
+            for (sched_slot = 1; speed_schedule[sched_slot][0] < gs->measure_number; sched_slot++);
+            gs->ms_per_eighth_note = speed_schedule[sched_slot - 1][1];
         }
 
         // select proper sound to make pending
@@ -151,14 +155,6 @@ void bopit_update_state(bopit_gamestate_t* gs, const bopit_user_input_t* input, 
         gs->t_next_beat += note_length_multipliers[gs->beat_state] * gs->ms_per_eighth_note;
 
         // If we just played beat 4, schedule the next expected UI action
-        if (gs->beat_state == BEAT_ENUM_BEAT_4) {
-            for (uint8_t i = 0; i < 4; i++, advance_lfsr(&gs->lfsr));
-
-            //gs->expected_action = ((uint8_t)gs->lfsr) % BOPIT_ACTION_NUM_ACTIONS;
-            gs->expected_action = BOPIT_ACTION_TWIST;
-            gs->t_this_action = gs->t_next_beat;
-        }
-
     } else {
         // clear pending sound
         gs->pending_audio = NULL;
@@ -166,7 +162,7 @@ void bopit_update_state(bopit_gamestate_t* gs, const bopit_user_input_t* input, 
     //gs->pending_audio = NULL;
 
     // update ui beattimes
-    bool button_now = debounce_button(&gs->bop_debouncer, (input->button == 0), gs->t_now);
+    bool button_now = debounce_button(&gs->bop_debouncer, (input->button != 0), gs->t_now);
     bool motor_now = (input->motor_voc_q8_8 > motor_hystersis[(gs->motor_prev ? 1 : 0)]);
     bool shaker_now = (input->shaker_voc_q8_8 > shaker_hystersis[(gs->shaker_prev ? 1 : 0)]);
 
@@ -188,14 +184,24 @@ void bopit_update_state(bopit_gamestate_t* gs, const bopit_user_input_t* input, 
 
 
     // check to see if the person missed a command
-    if (button_trig || motor_trig || shaker_trig ||
-        (gs->t_now >= (gs->t_this_action + (gs->action_window / 2)))) {
+    //if (button_trig || motor_trig || shaker_trig ||
+    if (motor_trig ||
+        (gs->t_now > (gs->t_this_action + (gs->action_window / 2)))) {
         // check that the person did the right one
-        if ((edges_to_bopit_action_e(button_trig, motor_trig, shaker_trig) != gs->expected_action) ||
+        //if ((edges_to_bopit_action_e(button_trig, motor_trig, shaker_trig) != gs->expected_action) ||
+        if (!motor_trig ||
             (gs->t_now > (gs->t_this_action + (gs->action_window / 2))) ||
             (gs->t_now < (gs->t_this_action - (gs->action_window / 2)))) {
-            gs->lost = 1;
+            gs->lost++;
         }
+
+        for (uint8_t i = 0; i < 4; i++, advance_lfsr(&gs->lfsr));
+
+        //gs->expected_action = ((uint8_t)gs->lfsr) % BOPIT_ACTION_NUM_ACTIONS;
+        gs->expected_action = BOPIT_ACTION_TWIST;
+
+        // TODO: this logic is slightly wrong when tempo increases.
+        gs->t_this_action = gs->t_measure_start + (gs->ms_per_eighth_note * 10);
     }
 
     gs->button_prev = button_now;

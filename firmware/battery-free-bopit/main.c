@@ -120,8 +120,9 @@ int main()
 
     //uint16_t eighth_note_delay = 32767 - 10;
     TA0CTL |= (1 << 2);
+    ADC12CTL0 |= (1 << 1);
     int16_t tnow = ((int16_t)TA0R) / 128;
-    while(1) {
+    while(gs.lost < 3) {
         uint16_t tprev = tnow;
         tnow = ((uint16_t)TA0R) / 128;
 
@@ -137,12 +138,13 @@ int main()
 
         bopit_update_state(&gs, (bopit_user_input_t[]){{voc_motor, voc_shaker, 0}}, diff);
 
-#if 0
-        static char dbgstr[] = "ea: ,b: ,t:    ,c: \r\n";
-        dbgstr[3] = gs.expected_action + '0';
-        dbgstr[7] = gs.beat_state + '0';
-        dbgstr[18] = (get_pending_audio_clip(&gs)) ? '1' : '0';
-        u16_to_hex(gs.t_now, &dbgstr[11]);
+#if 1
+        static char dbgstr[] = "tn:    ;tta:    ;l: s: t: \r\n";
+        u16_to_hex(gs.t_now, dbgstr + 2);
+        u16_to_hex(gs.t_this_action, dbgstr + 12);
+        dbgstr[19] = gs.lost + '0';
+        dbgstr[22] = gs.shaker_prev ? '1' : '0';
+        dbgstr[25] = gs.motor_prev ? '1' : '0';
         puts_blocking(dbgstr);
 #endif
 
@@ -154,6 +156,18 @@ int main()
             dbgstr[5] = gs.lost + '0';
             puts_blocking(dbgstr);
         }
+    }
+
+    while (1) {
+#if 0
+        TA0CTL |= (1 << 2);
+        start_audio_dma(__assets_shake_3_wav, __assets_shake_3_wav_size);
+        while(TA0R < (16000));
+
+        TA0CTL |= (1 << 2);
+        start_audio_dma(__assets_it_3_wav, __assets_it_3_wav_size);
+        while(TA0R < (16000));
+#endif
     }
 
 #if 1
