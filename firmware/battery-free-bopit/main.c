@@ -55,7 +55,7 @@ static void advance_lfsr(uint32_t* num)
     }
 }
 
-#if 0
+#if 1
 static uint8_t digit_to_hexchar(int digit)
 {
     return (digit >= 10) ? ((digit - 10) + 'a') : (digit + '0');
@@ -120,10 +120,14 @@ int main()
 
     //uint16_t eighth_note_delay = 32767 - 10;
     TA0CTL |= (1 << 2);
-    uint16_t tnow = TA0R;
+    int16_t tnow = ((int16_t)TA0R) / 128;
     while(1) {
         uint16_t tprev = tnow;
-        tnow = TA0R;
+        tnow = ((uint16_t)TA0R) / 128;
+
+        // quick hack to deal with overflow on timers
+        uint16_t diff = tnow - tprev;
+        if (tnow < tprev) diff += 0x200;
 
         _DINT();
         uint16_t adcnow[4] = {adc_results[0], adc_results[1], adc_results[2], adc_results[3]};
@@ -131,11 +135,24 @@ int main()
         uint16_t voc_motor = (uint16_t)calculate_voc(adcnow[0], adcnow[1], MOTOR_RWIND_Q24_8);
         uint16_t voc_shaker = (uint16_t)calculate_voc(adcnow[2], adcnow[3], SHAKER_RWIND_Q24_8);
 
-        bopit_update_state(&gs, (bopit_user_input_t[]){{voc_motor, voc_shaker, 0}}, tnow - tprev);
+        bopit_update_state(&gs, (bopit_user_input_t[]){{voc_motor, voc_shaker, 0}}, diff);
 
-        const audio_clip_t* clip = get_pending_audio_clip(&gs);
-        if (clip) {
+#if 0
+        static char dbgstr[] = "ea: ,b: ,t:    ,c: \r\n";
+        dbgstr[3] = gs.expected_action + '0';
+        dbgstr[7] = gs.beat_state + '0';
+        dbgstr[18] = (get_pending_audio_clip(&gs)) ? '1' : '0';
+        u16_to_hex(gs.t_now, &dbgstr[11]);
+        puts_blocking(dbgstr);
+#endif
+
+        audio_clip_t* clip = get_pending_audio_clip(&gs);
+        if (clip != NULL) {
             start_audio_dma(clip->audio, clip->audio_len);
+            static char dbgstr[] = "b0,L= \r\n";
+            dbgstr[1] = digit_to_hexchar(gs.beat_state);
+            dbgstr[5] = gs.lost + '0';
+            puts_blocking(dbgstr);
         }
     }
 
@@ -259,6 +276,7 @@ static void init_hardware()
 
     ////////////////////////////////////////////////////////////////
     // Set up a timer for general purpose timekeeping.
+    // TA0 runs at 125kHz
     TA0CTL = ((0b10u    <<  8) |      // Use SMCLK for timer
               (0b11u    <<  6) |      // Input divider is /8
               (0b10u    <<  4) |      // Timer counts in continuous mode; rolls over from 0xffff to 0x0000.

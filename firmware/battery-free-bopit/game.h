@@ -15,11 +15,11 @@ typedef enum {
 
 typedef enum {
     BEAT_ENUM_BEAT_1 = 0,     // "command"
-    BEAT_ENUM_BEAT_1_5,       // "it"
-    BEAT_ENUM_BEAT_2,         // hi-hat quarter note
-    BEAT_ENUM_BEAT_3,         // bass drum eighth note
-    BEAT_ENUM_BEAT_3_5,       // bass drum eighth note
-    BEAT_ENUM_BEAT_4,          // hi-hat quarter note
+    BEAT_ENUM_BEAT_1_5 = 1,       // "it"
+    BEAT_ENUM_BEAT_2 = 2,         // hi-hat quarter note
+    BEAT_ENUM_BEAT_3 = 3,         // bass drum eighth note
+    BEAT_ENUM_BEAT_3_5 = 4,       // bass drum eighth note
+    BEAT_ENUM_BEAT_4 = 5,          // hi-hat quarter note
     BEAT_ENUM_NUM_BEATS
 } beat_enum_e;
 

@@ -100,7 +100,7 @@ void bopit_init(bopit_gamestate_t* gs)
     it_clips[2].audio = __assets_it_3_wav; it_clips[2].audio_len = __assets_it_3_wav_size;
     it_clips[3].audio = __assets_it_4_wav; it_clips[3].audio_len = __assets_it_4_wav_size;
     dry_kick_clip.audio = __assets_dry_kick_wav; dry_kick_clip.audio_len = __assets_dry_kick_wav_size;
-    closed_hi_hat_clip.audio = __assets_dry_kick_wav; closed_hi_hat_clip.audio_len = __assets_dry_kick_wav_size;
+    closed_hi_hat_clip.audio = __assets_Closed_Hi_Hat_5_wav; closed_hi_hat_clip.audio_len = __assets_Closed_Hi_Hat_5_wav_size;
 }
 
 /**
@@ -154,7 +154,8 @@ void bopit_update_state(bopit_gamestate_t* gs, const bopit_user_input_t* input, 
         if (gs->beat_state == BEAT_ENUM_BEAT_4) {
             for (uint8_t i = 0; i < 4; i++, advance_lfsr(&gs->lfsr));
 
-            gs->expected_action = ((uint8_t)gs->lfsr) % BOPIT_ACTION_NUM_ACTIONS;
+            //gs->expected_action = ((uint8_t)gs->lfsr) % BOPIT_ACTION_NUM_ACTIONS;
+            gs->expected_action = BOPIT_ACTION_TWIST;
             gs->t_this_action = gs->t_next_beat;
         }
 
@@ -162,6 +163,7 @@ void bopit_update_state(bopit_gamestate_t* gs, const bopit_user_input_t* input, 
         // clear pending sound
         gs->pending_audio = NULL;
     }
+    //gs->pending_audio = NULL;
 
     // update ui beattimes
     bool button_now = debounce_button(&gs->bop_debouncer, (input->button == 0), gs->t_now);
