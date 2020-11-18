@@ -11,7 +11,7 @@ if __name__ == "__main__":
 
     header = open("audio_samples.h", "w")
     src    = open("audio_samples.c", "w")
-    header.write("#ifndef _AUDIO_SAMPLES_H\n#define _AUDIO_SAMPLES_H\n\n#include <stdint.h>\n#include<stddef.h>\n\n")
+    header.write("#ifndef _AUDIO_SAMPLES_H\n#define _AUDIO_SAMPLES_H\n\n#include <stdint.h>\n#include <stddef.h>\n\n")
     src.write("#include \"audio_samples.h\"\n\n")
 
     for filename in sys.argv[1:]:
