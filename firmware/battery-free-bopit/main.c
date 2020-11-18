@@ -319,7 +319,7 @@ static void init_hardware()
                 (0b1u    <<  6) |     // Source is a byte, not a word.
                 (0b1u    <<  5) |     // level sensitive DMA trigger
                 (0b0u    <<  4) |     // DMA Enable
-                (0b0100u <<  0));     // Bottom 4 bits are flags / don't care.
+                (0b0000u <<  0));     // Bottom 4 bits are flags / don't care.
 
     ////////////////////////////////////////////////////////////////
     // Set up ADC to sample channels A12 - A15 (pins p3.0-3)
