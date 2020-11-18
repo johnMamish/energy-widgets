@@ -122,7 +122,7 @@ int main()
     TA0CTL |= (1 << 2);
     ADC12CTL0 |= (1 << 1);
     int16_t tnow = ((int16_t)TA0R) / 128;
-    while(gs.lost < 3) {
+    while(gs.lost < 1) {
         uint16_t tprev = tnow;
         tnow = ((uint16_t)TA0R) / 128;
 

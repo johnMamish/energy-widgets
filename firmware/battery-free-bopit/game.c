@@ -58,7 +58,7 @@ const uint16_t speed_schedule[][2] =
 };
 
 uint16_t motor_hystersis[] = { 0x300, 0x200 };
-uint16_t shaker_hystersis[] = { 0x500, 0x200 };
+uint16_t shaker_hystersis[] = { 0x800, 0x200 };
 
 void bopit_init(bopit_gamestate_t* gs)
 {
@@ -70,7 +70,7 @@ void bopit_init(bopit_gamestate_t* gs)
     gs->ms_per_eighth_note = speed_schedule[0][1];
     gs->measure_number = 0;
     gs->expected_action = BOPIT_ACTION_TWIST;
-    gs->action_window = 100;                    // 100 milliseconds of slop for UI is ~16th note @ 120bpm
+    gs->action_window = 200;                    // 100 milliseconds of slop for UI is ~16th note @ 120bpm
     gs->t_this_action = gs->t_measure_start + 10 * gs->ms_per_eighth_note;
     gs->beat_state = BEAT_ENUM_BEAT_2;
 
@@ -185,11 +185,10 @@ void bopit_update_state(bopit_gamestate_t* gs, const bopit_user_input_t* input, 
 
     // check to see if the person missed a command
     //if (button_trig || motor_trig || shaker_trig ||
-    if (motor_trig ||
+    if (motor_trig || shaker_trig ||
         (gs->t_now > (gs->t_this_action + (gs->action_window / 2)))) {
         // check that the person did the right one
-        //if ((edges_to_bopit_action_e(button_trig, motor_trig, shaker_trig) != gs->expected_action) ||
-        if (!motor_trig ||
+        if ((edges_to_bopit_action_e(button_trig, motor_trig, shaker_trig) != gs->expected_action) ||
             (gs->t_now > (gs->t_this_action + (gs->action_window / 2))) ||
             (gs->t_now < (gs->t_this_action - (gs->action_window / 2)))) {
             gs->lost++;
@@ -198,7 +197,8 @@ void bopit_update_state(bopit_gamestate_t* gs, const bopit_user_input_t* input, 
         for (uint8_t i = 0; i < 4; i++, advance_lfsr(&gs->lfsr));
 
         //gs->expected_action = ((uint8_t)gs->lfsr) % BOPIT_ACTION_NUM_ACTIONS;
-        gs->expected_action = BOPIT_ACTION_TWIST;
+        //gs->expected_action = BOPIT_ACTION_TWIST;
+        gs->expected_action = ((uint8_t)gs->lfsr & 0x01) ? BOPIT_ACTION_TWIST : BOPIT_ACTION_SHAKE;
 
         // TODO: this logic is slightly wrong when tempo increases.
         gs->t_this_action = gs->t_measure_start + (gs->ms_per_eighth_note * 10);
