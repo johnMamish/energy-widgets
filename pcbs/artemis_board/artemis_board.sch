@@ -6,7 +6,7 @@
 <setting alwaysvectorfont="no"/>
 <setting verticaltext="up"/>
 </settings>
-<grid distance="0.05" unitdist="inch" unit="inch" style="lines" multiple="1" display="yes" altdistance="0.01" altunitdist="inch" altunit="inch"/>
+<grid distance="0.1" unitdist="inch" unit="inch" style="lines" multiple="1" display="no" altdistance="0.01" altunitdist="inch" altunit="inch"/>
 <layers>
 <layer number="1" name="Top" color="4" fill="1" visible="no" active="no"/>
 <layer number="2" name="Route2" color="1" fill="3" visible="no" active="no"/>
@@ -23251,7 +23251,16 @@ Source: www.kingbright.com</description>
 <attribute name="MFR_PN" value="CL05B102KB5NNNC"/>
 </part>
 <part name="GND133" library="supply1" library_urn="urn:adsk.eagle:library:371" deviceset="GND" device=""/>
-<part name="R49" library="rcl" library_urn="urn:adsk.eagle:library:334" deviceset="R-US_" device="R0402" package3d_urn="urn:adsk.eagle:package:23547/3" value="100k"/>
+<part name="R49" library="rcl" library_urn="urn:adsk.eagle:library:334" deviceset="R-US_" device="R0402" package3d_urn="urn:adsk.eagle:package:23547/3" value="100k">
+<spice>
+<pinmapping spiceprefix="R">
+<pinmap gate="G$1" pin="1" pinorder="1"/>
+<pinmap gate="G$1" pin="2" pinorder="2"/>
+</pinmapping>
+</spice>
+<attribute name="MFR" value="yageo"/>
+<attribute name="MFR_PN" value="RC0402FR-07100KL"/>
+</part>
 <part name="P+1" library="supply1" library_urn="urn:adsk.eagle:library:371" deviceset="VCC" device=""/>
 <part name="GND134" library="supply1" library_urn="urn:adsk.eagle:library:371" deviceset="GND" device=""/>
 <part name="P+7" library="supply1" library_urn="urn:adsk.eagle:library:371" deviceset="VCC" device=""/>
@@ -24533,6 +24542,8 @@ compatibility issues.</text>
 <instance part="R49" gate="G$1" x="134.62" y="-105.41" smashed="yes" rot="R90">
 <attribute name="NAME" x="133.1214" y="-109.22" size="1.778" layer="95" rot="R90"/>
 <attribute name="VALUE" x="137.922" y="-109.22" size="1.778" layer="96" rot="R90"/>
+<attribute name="MFR" x="134.62" y="-105.41" size="1.778" layer="96" rot="R90" display="off"/>
+<attribute name="MFR_PN" x="134.62" y="-105.41" size="1.778" layer="96" rot="R90" display="off"/>
 </instance>
 <instance part="P+1" gate="VCC" x="134.62" y="-96.52" smashed="yes">
 <attribute name="VALUE" x="132.08" y="-99.06" size="1.778" layer="96" rot="R90"/>
