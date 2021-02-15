@@ -13,12 +13,12 @@ MCU        = msp430fr5994
 # List all the source files here
 # eg if you have a source file foo.c then list it here
 SOURCES = main.c
-SOURCES += audio_samples.c
-SOURCES += game.c
-SOURCES += debounce.c
+SOURCES += ../common/audio_samples.c
+SOURCES += ../common/game.c
+SOURCES += ../common/debounce.c
 
 # Include are located in the Include directory
-INCLUDES = -IInclude -I/opt/ti/msp430/gcc/include
+INCLUDES = -IInclude -I/opt/ti/msp430/gcc/include -I../common
 # Add or subtract whatever MSPGCC flags you want. There are plenty more
 #######################################################################################
 CFLAGS   = -mmcu=$(MCU) -g -O2 -Wall -Wunused $(INCLUDES) -mlarge -std=gnu99
