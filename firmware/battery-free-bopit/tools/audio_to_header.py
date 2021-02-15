@@ -3,10 +3,12 @@
 # This tool takes a variadic number of .wav files as input and outputs c source and header files
 # containing the wav files. The audio depth is 8 bits.
 import wave, sys, textwrap
+import math
 
 if __name__ == "__main__":
     if (len(sys.argv) == 1):
-        print("Some file arguments are required.");
+        print("Some file arguments are required. Enter all of the audio files you want to convert.");
+        print(sys.argv[0] + " file1.wav file2.wav file3.wav")
         quit(0);
 
     header = open("audio_samples.h", "w")
@@ -36,7 +38,8 @@ if __name__ == "__main__":
         header.write("extern const uint8_t " + an + "[];\n")
         header.write("extern const size_t " + an + "_size;\n\n")
 
-        src.write("const uint8_t " + an + "[] __attribute__((section(\".upper.rodata\"))) = \n{\n    ")
+        padded_len = math.floor((len(samps) + 3) / 4) * 4
+        src.write("const uint8_t " + an + "[" + str(padded_len) + "] __attribute__((section(\".upper.rodata\"))) = \n{\n    ")
         src.write("\n    ".join(textwrap.wrap(", ".join([hex(b) for b in samps]))))
         src.write("\n};\n")
         src.write("const size_t " + an + "_size = sizeof(" + an + ");\n\n")
