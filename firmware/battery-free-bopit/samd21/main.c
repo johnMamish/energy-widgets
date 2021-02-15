@@ -1,8 +1,11 @@
 #include "samd21g18a.h"
 
 #include "audio_samples.h"
+#include "game.h"
 
 void init_hardware();
+void start_audio_dma(const uint8_t* datas, int len);
+
 
 static DmacDescriptor base_descriptor __attribute__((aligned(16)));
 
@@ -10,16 +13,17 @@ static DmacDescriptor base_descriptor __attribute__((aligned(16)));
 // DMAC transfers corresponding to the descriptor are filled out.
 static DmacDescriptor dmac_writeback   __attribute__((aligned(16)));
 
-const uint8_t datas[] =
+const uint8_t* action_sounds[] =
 {
-    0x00, 0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70,
-    0x80, 0x90, 0xa0, 0xb0, 0xc0, 0xd0, 0xe0, 0xf0
-    //0xf0, 0x08, 0xec, 0x08, 0xe8, 0x08
+    __assets_bop_1_wav, __assets_bop_2_wav, __assets_bop_3_wav, __assets_bop_4_wav,
+    __assets_shake_1_wav, __assets_shake_2_wav, __assets_shake_3_wav, __assets_shake_4_wav,
+    __assets_twist_1_wav, __assets_twist_2_wav, __assets_twist_3_wav, __assets_twist_4_wav
 };
 
-void start_audio_dma(const uint8_t* datas, int len);
-
-extern uint8_t foo[];
+const uint8_t* it_sounds[] =
+{
+    __assets_it_1_wav, __assets_it_2_wav, __assets_it_3_wav, __assets_it_4_wav
+};
 
 /**
  *
@@ -28,24 +32,23 @@ int main() {
     init_hardware();
 
     //volatile int i = foo[0x2ff];
-    start_audio_dma(__assets_dry_kick_wav, __assets_dry_kick_wav_size);
-    //start_audio_dma(__assets_Closed_Hi_Hat_5_wav, __assets_Closed_Hi_Hat_5_wav_size);
-    //start_audio_dma(__assets_bop_1_wav, __assets_bop_1_wav_size);
-    //start_audio_dma(__assets_bop_2_wav, __assets_bop_2_wav_size);
-    //start_audio_dma(__assets_bop_3_wav, __assets_bop_3_wav_size);
-    //start_audio_dma(__assets_bop_4_wav, __assets_bop_4_wav_size);
+    //start_audio_dma(__assets_dry_kick_wav, __assets_dry_kick_wav_size);
 
-    //start_audio_dma(datas, sizeof(datas));
-
-    char ch = 'a';
+    bopit_gamestate_t gs;
+    bopit_init(&gs);
+    uint16_t tnow = TC3->COUNT16.COUNT.reg;
     while(1) {
-        // wait for SERCOM0's tx register to be empty
-        if (SERCOM0->USART.INTFLAG.reg & (1 << 0)) {
-            SERCOM0->USART.DATA.reg = ch;
-            ch = (ch == 'z') ? ('a') : (ch + 1);
-        }
+        uint16_t tprev = tnow;
+        tnow = TC3->COUNT16.COUNT.reg;
 
-        //
+        uint16_t diff = tnow - tprev;
+
+        bopit_update_state(&gs, (bopit_user_input_t[]){{0, 0, 0}}, diff);
+
+        audio_clip_t* clip = get_pending_audio_clip(&gs);
+        if (clip != NULL) {
+            start_audio_dma(clip->audio, clip->audio_len);
+        }
     }
     return (0);
 }
@@ -100,6 +103,28 @@ void init_hardware()
                                    (0 << 17) |   // disable input
                                    (1 << 16) |   // enable PMUX selection
                                    (1 << 14));   // apply this config to pin 14
+
+    ////////////////////////////////////////////////////////////////////////////
+    // Setup TC3 to be driven by clkgen 1 and tick 1 time per millisecond
+    PM->APBCMASK.bit.TC3_ = 1;
+
+    GCLK->GENCTRL.reg = ((1 << 21) |    // clkgen 1 should run in standby
+                         (0 << 20) |    // clkgen 1 is divided by GENDIV.DIV
+                         (1 << 17) |    // improve duty cycle for odd division factors
+                         (1 << 16) |    // enable the clock generator
+                         (6 << 8)  |    // source is OSC8M
+                         (1 << 0));     // clkgen 1 is our config target
+    GCLK->GENDIV.reg  = ((125 << 8) | (1 << 0));             // set up x125 divider
+    GCLK->CLKCTRL.reg = (1 << 14) | (1 << 8) | (0x1b << 0);
+
+    TC3->COUNT16.CTRLA.bit.RUNSTDBY = 1;
+    TC3->COUNT16.CTRLA.bit.PRESCALER = TC_CTRLA_PRESCALER_DIV64_Val;
+    TC3->COUNT16.CTRLA.bit.MODE = TC_CTRLA_MODE_COUNT16_Val;
+
+    TC3->COUNT16.READREQ.bit.ADDR = 0x10;
+    TC3->COUNT16.READREQ.bit.RCONT = 1;
+
+    TC3->COUNT16.CTRLA.bit.ENABLE = 1;
 
     ////////////////////////////////////////////////////////////////////////////
     // Configure TCC0 to output audio PWM signal on WO[4]
