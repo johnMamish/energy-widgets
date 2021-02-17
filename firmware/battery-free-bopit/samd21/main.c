@@ -26,29 +26,77 @@ const uint8_t* it_sounds[] =
 };
 
 /**
+ * This isr needs to swap adc channels and start adc conversions.
+ *
+ * This whole thing COULD be DONE with chained DMA xfers which would be pretty dang cool.
+ */
+volatile uint32_t adc_interrupt_count = 0;
+// this is the mux sequence --> 0, 2, 3, 4
+void ADC_Handler()
+{
+    // todo toggle gpio to explicitly get conversion rate
+    PORT->Group[0].OUTTGL.reg = (1 << 9);
+
+    // start a new conversion
+    //ADC->SWTRIG.bit.FLUSH = 1;
+    ADC->SWTRIG.bit.START = 1;
+
+    // clear the nvic bit. note: this is apparently not necessary (at least for the ADC), the NVIC's
+    // pending IRQ bit for the ADC is just directly the OR of the ADC status bits.
+
+    // clear the adc bit.
+    ADC->RESULT;
+
+    if (ADC->INTFLAG.bit.OVERRUN) {
+        while(1);
+    }
+
+    adc_interrupt_count++;
+}
+
+static volatile Dmac* dmac = DMAC;
+static volatile Adc* adc = ADC;
+
+/**
  *
  */
 int main() {
+    // Per table 2-2 ("core register set summary") of the Cortex-m0+ DGUG, interrupts are in fact
+    // ENABLED on reset via PRIMASK (whose value is 0 on reset). Let's disable them before we setup
+    // any hardware.
+    __disable_irq();
+
     init_hardware();
 
-    //volatile int i = foo[0x2ff];
-    //start_audio_dma(__assets_dry_kick_wav, __assets_dry_kick_wav_size);
+    while (0) {
+        if (ADC->INTFLAG.bit.RESRDY) {
+            PORT->Group[0].OUTSET.reg = (1 << 9);
+            ADC->RESULT;
+            adc_interrupt_count++;
+            PORT->Group[0].OUTCLR.reg = (1 << 9);
+        }
+    }
+
+    __enable_irq();
 
     bopit_gamestate_t gs;
     bopit_init(&gs);
-    uint16_t tnow = TC3->COUNT16.COUNT.reg;
+    bopit_update_state(&gs, (bopit_user_input_t[]){{0, 0, 0}}, 10);
+    uint16_t tnow;
     while(1) {
         uint16_t tprev = tnow;
         tnow = TC3->COUNT16.COUNT.reg;
 
         uint16_t diff = tnow - tprev;
-
+#if 1
         bopit_update_state(&gs, (bopit_user_input_t[]){{0, 0, 0}}, diff);
-
+#endif
+#if 1
         audio_clip_t* clip = get_pending_audio_clip(&gs);
         if (clip != NULL) {
             start_audio_dma(clip->audio, clip->audio_len);
         }
+#endif
     }
     return (0);
 }
@@ -57,7 +105,10 @@ void init_hardware()
 {
     // Configure cache and wait states
     NVMCTRL->CTRLB.reg = ((0b01 << 16) |    // low-power read mode
-                              (0b0000 << 1));   // 0 NVM wait states (table 36-39)
+                          (0b0000 << 1));   // 0 NVM wait states (table 36-39)
+
+    //NVMCTRL->CTRLB.bit.CACHEDIS = 1;        // disable the cache
+    //NVMCTRL->CTRLB.bit.READMODE = NVMCTRL_CTRLB_READMODE_DETERMINISTIC_Val;
 
     // change OSC8M output divider from 8 to 1.
     SYSCTRL->OSC8M.reg &= ~(0b11ul << 8);
@@ -106,6 +157,7 @@ void init_hardware()
 
     ////////////////////////////////////////////////////////////////////////////
     // Setup TC3 to be driven by clkgen 1 and tick 1 time per millisecond
+#if 1
     PM->APBCMASK.bit.TC3_ = 1;
 
     GCLK->GENCTRL.reg = ((1 << 21) |    // clkgen 1 should run in standby
@@ -117,14 +169,14 @@ void init_hardware()
     GCLK->GENDIV.reg  = ((125 << 8) | (1 << 0));             // set up x125 divider
     GCLK->CLKCTRL.reg = (1 << 14) | (1 << 8) | (0x1b << 0);
 
+    TC3->COUNT16.READREQ.reg = (1 << 15) | (1 << 14) | (0x10 << 0);
+
     TC3->COUNT16.CTRLA.bit.RUNSTDBY = 1;
     TC3->COUNT16.CTRLA.bit.PRESCALER = TC_CTRLA_PRESCALER_DIV64_Val;
     TC3->COUNT16.CTRLA.bit.MODE = TC_CTRLA_MODE_COUNT16_Val;
 
-    TC3->COUNT16.READREQ.bit.ADDR = 0x10;
-    TC3->COUNT16.READREQ.bit.RCONT = 1;
-
     TC3->COUNT16.CTRLA.bit.ENABLE = 1;
+#endif
 
     ////////////////////////////////////////////////////////////////////////////
     // Configure TCC0 to output audio PWM signal on WO[4]
@@ -168,10 +220,10 @@ void init_hardware()
 
     // Send one beat on each trigger
     DMAC->CHCTRLB.reg = ((2 << 22) |     // Send one 'beat' on each trigger
-                               (0x0d << 8) |   // use TCC0 OVF as trigger
-                               (3 << 5) |      // Channel priority level 3 (probably unnecessary)
-                               (0 << 4) |      // No channel event output enable
-                               (1 << 3));      // enable channel event input
+                         (0x0d << 8) |   // use TCC0 OVF as trigger
+                         (3 << 5) |      // Channel priority level 3 (probably unnecessary)
+                         (0 << 4) |      // No channel event output enable
+                         (1 << 3));      // enable channel event input
 
     // Enable transfers for all levels
     DMAC->CTRL.reg |= (0x0f << 8);
@@ -179,6 +231,64 @@ void init_hardware()
     // Enable the DMA
     DMAC->CTRL.reg |= (1 << 1);
 
+    ////////////////////////////////////////////////////////////////////////////
+    // Configure ADC
+    // Use A0 - A3 on the metro board as analog inputs. These are
+    //     PA02/AIN[0], PB08/AIN[2], PB09/AIN[3], PA04/AIN[4]
+    // respectively
+    PORT->Group[1].DIRCLR.reg |= ((1 << 9) | (1 << 8));
+    //PORT->Group[1].IN.reg &= ~((1 << 9) | (1 << 8));
+    PORT->Group[0].DIRCLR.reg |= ((1 << 4) | (1 << 2));
+    //PORT->Group[0].IN.reg &= ~((1 << 4) | (1 << 2));
+
+    // ADC clock is 8MHz and comes from GCLK0.
+    // We want the sample rate of ABOUT 10kHz.
+    GCLK->CLKCTRL.reg = ((1 << 14) | (0 << 8) | (0x1e << 0));
+
+    PM->APBCMASK.bit.ADC_ = 1;
+
+    ADC->REFCTRL.bit.REFCOMP = 1;
+    ADC->REFCTRL.bit.REFSEL = ADC_REFCTRL_REFSEL_INTVCC0_Val;
+
+    // each samp takes 9 cycles, so if we prescale our 8MHz input clock by a factor of 128, we will
+    // get a conversion rate of 6.94444kHz
+    ADC->CTRLB.bit.PRESCALER = ADC_CTRLB_PRESCALER_DIV128_Val;
+    ADC->CTRLB.bit.RESSEL = ADC_CTRLB_RESSEL_12BIT_Val;
+    ADC->CTRLB.bit.CORREN = 0;
+    ADC->CTRLB.bit.FREERUN = 0;
+    ADC->CTRLB.bit.LEFTADJ = 0;
+    ADC->CTRLB.bit.DIFFMODE = 0;
+
+    ADC->SAMPCTRL.reg = 4;
+
+    //
+    ADC->INPUTCTRL.bit.GAIN = ADC_INPUTCTRL_GAIN_DIV2_Val;
+    ADC->INPUTCTRL.bit.MUXPOS = ADC_INPUTCTRL_MUXPOS_BANDGAP_Val;
+
+    // get calibration info from NVM
+    uint32_t* nvmctrl_otp4 = ((uint32_t*)NVMCTRL_OTP4);
+    ADC->CALIB.bit.BIAS_CAL = ((nvmctrl_otp4[1] & ADC_FUSES_BIASCAL_Msk) >> ADC_FUSES_BIASCAL_Pos);
+    ADC->CALIB.bit.LINEARITY_CAL = (((nvmctrl_otp4[0] & ADC_FUSES_LINEARITY_0_Msk) >>
+                                     ADC_FUSES_LINEARITY_0_Pos) |
+                                    ((nvmctrl_otp4[1] & ADC_FUSES_LINEARITY_1_Msk) >>
+                                     ADC_FUSES_LINEARITY_1_Pos) << 5);
+
+    // ADC should interrupt on finished conversion
+    ADC->INTENSET.bit.RESRDY = 1;
+    NVIC_EnableIRQ(ADC_IRQn);
+
+    ADC->CTRLA.bit.ENABLE = 1;
+
+    // flush the ADC and start a new conversion
+    ADC->SWTRIG.bit.FLUSH = 1;
+    while(ADC->SWTRIG.bit.FLUSH);
+    ADC->SWTRIG.bit.START = 1;
+
+
+    ////////////////////////////////////////////////////////////////////////////
+    // ADC "interrupt executing" output pin
+    // metro pin D3 / samd21 pin PA09
+    PORT->Group[0].DIRSET.reg = (1 << 9);
 }
 
 void start_audio_dma(const uint8_t* data, int len)
