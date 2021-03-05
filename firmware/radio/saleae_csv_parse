@@ -1,0 +1,41 @@
+import csv
+from collections import deque
+from statistics import stdev 
+
+v_recent = [0, 0, 0, 0, 0, 0, 0, 0]
+v = 0
+v_last = 0
+
+times = []
+time_ref = 1000 #neg value means error
+
+#system uptime 80ish samples.csv
+#test run.csv
+with open('system uptime 80ish samples.csv', newline='') as f:
+    reader = csv.reader(f)
+    next(reader) #ignore column headers
+    next(reader)
+
+    for r in reader:
+
+        t = float(r[0])
+        v_recent.pop(0)
+        v_recent.append(float(r[1]))
+
+        v_last = v
+        v = sum(v_recent)/len(v_recent)
+
+        if v >= 2 and v_last < 2:
+            time_ref = t
+        if v < 2 and v_last >= 2:
+            times.append(t-time_ref)
+            time_ref = 1000
+        
+print(times)
+print(len(times))
+print(sum(times)/len(times))
+print(stdev(times))
+
+for i, t in enumerate(times):
+    if t < sum(times)/len(times)/5 or t > sum(times)/len(times)*5:
+        print("error:", i)
