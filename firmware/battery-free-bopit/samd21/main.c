@@ -169,7 +169,11 @@ void init_hardware()
     GCLK->GENDIV.reg  = ((125 << 8) | (1 << 0));             // set up x125 divider
     GCLK->CLKCTRL.reg = (1 << 14) | (1 << 8) | (0x1b << 0);
 
-    TC3->COUNT16.READREQ.reg = (1 << 15) | (1 << 14) | (0x10 << 0);
+    //TC3->COUNT16.READREQ.reg = (1 << 15) | (1 << 14) | (0x10 << 0);
+
+    TC3->COUNT16.READREQ.bit.ADDR  = 0x10;
+    TC3->COUNT16.READREQ.bit.RCONT = 1;
+    TC3->COUNT16.READREQ.bit.RREQ  = 1;
 
     TC3->COUNT16.CTRLA.bit.RUNSTDBY = 1;
     TC3->COUNT16.CTRLA.bit.PRESCALER = TC_CTRLA_PRESCALER_DIV64_Val;
