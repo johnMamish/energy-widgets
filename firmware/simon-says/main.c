@@ -257,19 +257,6 @@ static void init_hardware()
     P3SEL1 &= ~(1 << 5);
     P3DIR  |=  (1 << 5);
 
-    DMA1SA   = 0;
-    DMA1DA   = 0;
-    DMA1SZ   = 0;
-    DMACTL0 &= ~(0b11111u << 8); DMACTL0 |= DMA1TSEL__TB0CCR0;
-    DMA1CTL  = ((0b000u  << 12) |     // DMA xfer mode: single xfer
-                (0b00u   << 10) |     // Don't increment destination.
-                (0b11u   <<  8) |     // Do    increment source.
-                (0b0u    <<  7) |     // Destination is a word, not a byte.
-                (0b1u    <<  6) |     // Source is a byte, not a word.
-                (0b1u    <<  5) |     // level sensitive DMA trigger
-                (0b0u    <<  4) |     // DMA Enable
-                (0b0000u <<  0));     // Bottom 4 bits are flags / don't care.
-
     // User guide section 2.3.4 - "After a power cycle I/O pins are locked in high-impedance state
     // with input Schmitt triggers disabled until LOCKLPM5 is cleared by the user software"
     PM5CTL0 &= ~LOCKLPM5;
