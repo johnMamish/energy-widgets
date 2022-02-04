@@ -7,6 +7,6 @@
 
 #include "saeclib/src/saeclib_circular_buffer.h"
 
-extern saeclib_circular_buffer_t* uart_buffer;
+extern saeclib_u8_circular_buffer_t* uart_buffer;
 
 #endif

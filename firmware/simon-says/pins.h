@@ -13,7 +13,8 @@ typedef struct pin_port
 #define PORT_BASE(x) ((x).Px_BASE + (x).mmio_offset)
 
 const extern pin_port_t button_read_pins[];
-
 const extern pin_port_t button_clear_pin;
+
+const extern pin_port_t onboard_leds[];
 
 #endif

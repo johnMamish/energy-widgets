@@ -23,7 +23,7 @@ SOURCES += uart_buffer.c
 INCLUDES = -IInclude -I/opt/ti/msp430/gcc/include -I../external
 # Add or subtract whatever MSPGCC flags you want. There are plenty more
 #######################################################################################
-CFLAGS   = -mmcu=$(MCU) -g -O0 -Wall -Wunused $(INCLUDES)
+CFLAGS   = -mmcu=$(MCU) -g -Ofast -Wall -Wunused $(INCLUDES)
 ASFLAGS  = -mmcu=$(MCU) -x assembler-with-cpp -Wa,-gstabs
 LDFLAGS  = -mmcu=$(MCU) -Wl,-Map=$(TARGET).map -Wl,-L/opt/ti/msp430/gcc/include
 ########################################################################################

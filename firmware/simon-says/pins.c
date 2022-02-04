@@ -14,6 +14,16 @@ const pin_port_t button_read_pins[] =
 
     {(uint8_t*)P8_BASE, 1, OFS_P2IN},
     {(uint8_t*)P8_BASE, 2, OFS_P2IN},
+
+    {(uint8_t*)P5_BASE, 0, OFS_P1IN},
+    {(uint8_t*)P5_BASE, 1, OFS_P1IN}
 };
 
+
 const pin_port_t button_clear_pin = {(uint8_t*)P3_BASE, 6, OFS_P1IN};
+
+const pin_port_t onboard_leds[] =
+{
+    {(uint8_t*)P1_BASE, 0, OFS_P1IN},
+    {(uint8_t*)P1_BASE, 1, OFS_P1IN}
+};

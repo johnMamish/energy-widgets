@@ -3,6 +3,9 @@
 
 #include <stdint.h>
 
+// Number of different buttons to choose from.
+#define SS_OPTIONS 4
+
 typedef uint8_t simon_says_user_input_t;
 
 typedef enum {
