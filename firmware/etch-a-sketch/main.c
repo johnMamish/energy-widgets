@@ -10,6 +10,7 @@
 
 // fixed-point integer type
 typedef uint32_t q24_8_t;
+typedef uint16_t q8_8_t;
 
 // Gain of MAX9938 current sense
 // 25 * 256 = 6400
@@ -87,10 +88,23 @@ void adc12_sample_interrupt()
     }
 }
 
+/**
+ *
+ */
+void update_state(uint8_t persistent_bitmap)
+
 #define SCREEN_WIDTH 168
 #define SCREEN_HEIGHT 144
 
-static uint8_t screen_buffers[2][3314];
+#define LINE_PADDING_BYTES 2
+#define BYTES_PER_LINE 23
+#define MAX_LINES_PER_FRAME 24
+#define POINTER_SPRITE_HEIGHT 3
+#define DMA_BUFFER_SIZE (LINE_PADDING_BYTES + (BYTES_PER_LINE * (MAX_LINES_PER_FRAME + POINTER_SHAPE_HEIGHT)))
+
+static uint8_t screen_buffers[2][DMA_BUFFER_SIZE];
+
+static uint8_t persistent_bitmap[144] __attribute__ ((persistent));
 
 int main()
 {
@@ -104,51 +118,36 @@ int main()
     uint16_t tnow = TA0R / 128;
     uint8_t front_buffer = 0;
 
-    uint8_t x = 0;
-    uint8_t y = 0;
+    q8_8_t point[2] = {(SCREEN_WIDTH / 2) * 256, (SCREEN_HEIGHT / 2) * 256};
 
     while(1) {
         // polling wait until frame time (30Hz) is passed
-        while ((TA0R - tnow) < 33);
+        while (((TA0R / 128) - tnow) < 33);
         tnow = TA0R / 128;
 
         ////////////////////////////////////////////////
         // process data; fill buffer
         // fill command and vcom toggle
-        uint16_t buffer_len = 0;
-        screen_buffers[front_buffer][0] = (1 << 7) | (front_buffer << 6); // front_bffer can be used for vcom
-        buffer_len += 1;
+        q8_8_t dpoint[2] = {256, 256};
 
-        // fill line
-        screen_buffers[front_buffer][buffer_len] = y;
-        for (int i = 0; i < 21; i++) {
-            screen_buffers[front_buffer][buffer_len + 1 + i] = 0;
-        }
-        screen_buffers[front_buffer][buffer_len + 1 + (x / 8)] = (1 << (x % 8));
-        screen_buffers[front_buffer][buffer_len + 22] = 0;
-        buffer_len += 23;
-
-        // trailer
-        screen_buffers[front_buffer][buffer_len] = 0;
-        buffer_len += 1;
-
-        if (++y == SCREEN_HEIGHT) {
-            y = 0;
-            if (++x == SCREEN_WIDTH) {
-                x = 0;
-            }
-        }
 
         // poll on dma xfer being finished.
-        while (!(DMA1CTL & (1 << 3)));
+        while ((DMA3CTL & (1 << 4)));
 
-        // toggle chip sel low and back high
+        // toggle chip sel low and back high;
+        // needs to be low for a minimum of 6 microseconds. TA0 ticks once every 128us
         P8OUT &= ~(1 << 3);
-        for (uint16_t tstart = TA0R; (TA0R - tstart) < 128; );
+        for (uint16_t tstart = TA0R; (TA0R - tstart) < 2; );
         P8OUT |= (1 << 3);
 
-        // arrange new interrupt on the front buffer.
+        // start new DMA xfer
+        DMA3SA = (intptr_t)(&screen_buffers[front_buffer][0]);
+        DMA3DA = (intptr_t)(&UCB1TXBUF);
+        DMA3SZ = buffer_len;
+        DMA3CTL |= (1 << 4);
 
+        front_buffer++;
+        if (front_buffer == 2) front_buffer = 0;
 
         _DINT();
         uint16_t adcnow[4] = {adc_results[0], adc_results[1], adc_results[2], adc_results[3]};
@@ -256,7 +255,7 @@ static void init_hardware()
     DMA3SA  = 0;
     DMA3DA  = 0;
     DMA3SZ  = 0;
-    DMACTL2 &= ~(0b11111u << 8); DMACTL2 |= DMA3TSEL__UCB1TXIFG;
+    DMACTL1 &= ~(0b11111u << 8); DMACTL1 |= DMA3TSEL__UCB1TXIFG;
     DMA3CTL = ((0b000u  << 12) |     // DMA xfer mode: single xfer
                (0b00u   << 10) |     // Don't increment destination.
                (0b11u   <<  8) |     // Do    increment source.
@@ -312,7 +311,7 @@ static void init_hardware()
 
     UCB1CTLW0 = ((0b1 << 15) |        // data is sampled on rising edge
                  (0b0 << 14) |        // clock's idle state is low
-                 (0b0 << 13) |        // 0: LSB first
+                 (0b0 << 13) |        // 1: MSB first
                  (0b0 << 12) |        // 0: 8-bit data
                  (0b1 << 11) |        // 1: SPI controller mode
                  (0b00 << 9) |        // 00: 3-pin spi mode
@@ -320,9 +319,7 @@ static void init_hardware()
                  (0b10 << 6) |        // use SMCLK
                  (0b0  << 0));        // don't software reset; we want to use the hw
 
-    UCB1BRW = 10;                      // serial clock = SMCLK = 1MHz
-
-    UCB1TXBUF = 0xaa;
+    UCB1BRW = 8;                      // serial clock = SMCLK/8 = 1MHz
 }
 
 static void start_audio_dma(const uint8_t* src, int32_t len)
