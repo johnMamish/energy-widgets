@@ -1,6 +1,7 @@
 #include "msp430fr5994.h"
 
 #include <stdint.h>
+#include <string.h>
 
 /**
  * TODOs:
@@ -10,7 +11,7 @@
 
 // fixed-point integer type
 typedef uint32_t q24_8_t;
-typedef uint16_t q8_8_t;
+typedef int32_t q23_8_t;
 
 // Gain of MAX9938 current sense
 // 25 * 256 = 6400
@@ -35,7 +36,7 @@ const q24_8_t VCC_Q24_8 = 512;
  */
 static void init_hardware();
 
-#if 1
+#if 0
 static uint8_t digit_to_hexchar(int digit)
 {
     return (digit >= 10) ? ((digit - 10) + 'a') : (digit + '0');
@@ -53,13 +54,18 @@ static void puts_blocking(const char* s)
 {
     for (int i = 0; s[i]; i++) { UCA0TXBUF = s[i]; while(UCA0STATW & (1 << 0)); }
 }
-#endif
 
 static q24_8_t calculate_voc(uint16_t adc_isense, uint16_t adc_vsense, q24_8_t rwind)
 {
     q24_8_t Ih = ((adc_isense * VCC_Q24_8) / ((RSENSE_Q24_8 * ISENSEGAIN_Q24_8) >> 8));
     q24_8_t Vh = ((adc_vsense * VCC_Q24_8) / (RDIV_FACTOR_Q24_8));
     return (Vh + ((Ih * rwind) >> 8));
+}
+#endif
+
+static inline q23_8_t iabs_q23_8(q23_8_t n)
+{
+    return ((n < 0) ? -n : n);
 }
 
 /**
@@ -88,38 +94,57 @@ void adc12_sample_interrupt()
     }
 }
 
-/**
- *
- */
-void update_state(uint8_t persistent_bitmap)
-
-#define SCREEN_WIDTH 168
-#define SCREEN_HEIGHT 144
+#define SCREEN_WIDTH (144u)
+#define SCREEN_HEIGHT (168u)
 
 #define LINE_PADDING_BYTES 2
-#define BYTES_PER_LINE 23
+#define BYTES_PER_LINE (SCREEN_WIDTH / 8)
 #define MAX_LINES_PER_FRAME 24
 #define POINTER_SPRITE_HEIGHT 3
-#define DMA_BUFFER_SIZE (LINE_PADDING_BYTES + (BYTES_PER_LINE * (MAX_LINES_PER_FRAME + POINTER_SHAPE_HEIGHT)))
+#define DMA_BUFFER_SIZE (LINE_PADDING_BYTES + (BYTES_PER_LINE * (MAX_LINES_PER_FRAME + POINTER_SPRITE_HEIGHT)))
 
 static uint8_t screen_buffers[2][DMA_BUFFER_SIZE];
 
-static uint8_t persistent_bitmap[144] __attribute__ ((persistent));
+static uint8_t persistent_bitmap[SCREEN_HEIGHT][SCREEN_WIDTH / 8] __attribute__ ((persistent)) = {
+    0
+};
+
+void clear_screen(uint8_t persistent_bitmap[SCREEN_HEIGHT][SCREEN_WIDTH / 8]);
+
+/**
+ *
+ */
+uint16_t update_state(uint8_t persistent_bitmap[SCREEN_HEIGHT][SCREEN_WIDTH / 8],
+                      q23_8_t* point,
+                      q23_8_t* dpoint,
+                      uint8_t* dma_buffer);
 
 int main()
 {
     init_hardware();
 
+    // clear persistent screen
+    memset(persistent_bitmap, 0xff, sizeof(persistent_bitmap));
+
     // enable interrupts
-    _EINT();
+    //_EINT();
 
     TA0CTL |= (1 << 2);
     ADC12CTL0 |= (1 << 1);
     uint16_t tnow = TA0R / 128;
     uint8_t front_buffer = 0;
 
-    q8_8_t point[2] = {(SCREEN_WIDTH / 2) * 256, (SCREEN_HEIGHT / 2) * 256};
+    // blocking code to clear screen
+    P8OUT |= (1 << 3);
+    UCB1TXBUF = (1 << 2);
+    while (!(UCB1IFG & (1 << 1)));
+    UCB1TXBUF = 0;
+    while (!(UCB1IFG & (1 << 1)));
+    for (uint16_t tstart = TA0R; (TA0R - tstart) < 2; );
+    P8OUT &= ~(1 << 3);
 
+    q23_8_t point[2] = {((SCREEN_WIDTH + 14)  / 2) * 256, ((SCREEN_HEIGHT - 8) / 2) * 256};
+    q23_8_t dpoint[2] = {200 * 3, 256};
     while(1) {
         // polling wait until frame time (30Hz) is passed
         while (((TA0R / 128) - tnow) < 33);
@@ -128,8 +153,31 @@ int main()
         ////////////////////////////////////////////////
         // process data; fill buffer
         // fill command and vcom toggle
-        q8_8_t dpoint[2] = {256, 256};
+        uint16_t buffer_len = update_state(persistent_bitmap, point, dpoint, &screen_buffers[front_buffer][0]);
 
+        // set toggling vcom
+        screen_buffers[front_buffer][0] |= (front_buffer << 1);
+
+        // move cursor
+        point[0] += dpoint[0]; point[1] += dpoint[1];
+
+        #if 1
+        if (point[0] < 0) {
+            point[0] = -point[0];
+            dpoint[0] = -dpoint[0];
+        } else if (point[0] > (SCREEN_WIDTH << 8)) {
+            point[0] = (SCREEN_WIDTH << 8) - (point[0] - (SCREEN_WIDTH << 8));
+            dpoint[0] = -dpoint[0];
+        }
+
+        if (point[1] < 0) {
+            point[1] = -point[1];
+            dpoint[1] = -dpoint[1];
+        } else if (point[1] > (SCREEN_HEIGHT << 8)) {
+            point[1] = (SCREEN_HEIGHT << 8) - (point[1] - (SCREEN_HEIGHT << 8));
+            dpoint[1] = -dpoint[1];
+        }
+        #endif
 
         // poll on dma xfer being finished.
         while ((DMA3CTL & (1 << 4)));
@@ -149,11 +197,13 @@ int main()
         front_buffer++;
         if (front_buffer == 2) front_buffer = 0;
 
+#if 0
         _DINT();
         uint16_t adcnow[4] = {adc_results[0], adc_results[1], adc_results[2], adc_results[3]};
         _EINT();
         uint16_t voc_motor = (uint16_t)calculate_voc(adcnow[0], adcnow[1], MOTOR_RWIND_Q24_8);
         uint16_t voc_shaker = (uint16_t)calculate_voc(adcnow[2], adcnow[3], MOTOR_RWIND_Q24_8);
+#endif
     }
     return -1;
 }
@@ -322,16 +372,102 @@ static void init_hardware()
     UCB1BRW = 8;                      // serial clock = SMCLK/8 = 1MHz
 }
 
-static void start_audio_dma(const uint8_t* src, int32_t len)
+/**
+ * code for this copied from wikipedia
+ */
+static int32_t isqrt(int32_t n)
 {
-    // Potentially stop transfer
-    DMA1CTL &= ~(0b1u << 4);
+    int32_t x0 = n / 2;
 
-    // set up source and length
-    __data16_write_addr((uintptr_t)(&DMA1SA), (uintptr_t)src);
-    DMA1DA   = (intptr_t)(&TB0CCR3);
-    DMA1SZ   = (len > 65535) ? (65535) : len;
+    // Sanity check
+    if ( x0 != 0 ) {
+        int32_t x1 = ( x0 + n / x0 ) / 2;	// Update
 
-    // initiate transfer
-    DMA1CTL |= (0b1u << 4);
+        while (x1 < x0) {
+            x0 = x1;
+            x1 = (x0 + (n / x0)) / 2;
+        }
+
+        return x0;
+    }
+    else {
+        return n;
+    }
+}
+
+static q23_8_t length_q23_8(const q23_8_t* dp)
+{
+    int32_t a2 = ((int32_t)dp[0]) * ((int32_t)dp[0]);
+    int32_t b2 = ((int32_t)dp[1]) * ((int32_t)dp[1]);
+    return isqrt(a2 + b2);
+}
+
+uint16_t update_state(uint8_t persistent_bitmap[SCREEN_HEIGHT][SCREEN_WIDTH / 8],
+                      q23_8_t* point,
+                      q23_8_t* dpoint,
+                      uint8_t* dma_buffer)
+{
+    uint8_t n_updated_lines = 0;
+    static uint8_t updated_screen_lines[32];
+
+    // simple and inaccurate fixed-point line drawing algorithm; dumb. room for optimization.
+    q23_8_t length = length_q23_8(dpoint);
+    q23_8_t normalized_dpoint[2] = {(dpoint[0] * 256) / length,
+        (dpoint[1] * 256) / length};
+
+    q23_8_t q[2] = {point[0], point[1]};
+    for (int i = 0; i < (length / 256); i++) {
+        // set pixel at point
+        // note - black pixels are '0', white pixels are '1'
+        uint8_t x = q[0] / 256;
+        uint8_t y = q[1] / 256;
+        persistent_bitmap[y][x / 8] &= ~(1 << (x % 8));
+
+        // do a linear search through the lines we've already logged and decide not to log this line
+        // if we've already logged it.
+        int f = 0;
+        for (int i = (n_updated_lines - 1); i >= 0; i--) {
+            if (updated_screen_lines[i] == y) {
+                f = 1;
+                break;
+            }
+        }
+
+        if (!f)
+            updated_screen_lines[n_updated_lines++] = y;
+
+        // move point in direction
+        q[0] += normalized_dpoint[0];
+        q[1] += normalized_dpoint[1];
+    }
+
+    uint8_t x = q[0] / 256;
+    uint8_t y = q[1] / 256;
+    persistent_bitmap[y][x / 8] &= ~(1 << (x % 8));
+    updated_screen_lines[n_updated_lines++] = y;
+
+    // TODO: caller needs to make sure to toggle vcom bit
+    dma_buffer[0] = (1 << 0);
+    uint16_t dma_idx = 1;
+    for (int i = 0; i < n_updated_lines; i++) {
+        int l = updated_screen_lines[i];
+
+        // setup dma
+        // line number
+        dma_buffer[dma_idx] = l;
+
+        // line data
+        memcpy(&dma_buffer[dma_idx + 1], &persistent_bitmap[l][0], (SCREEN_WIDTH / 8));
+
+        // trailer
+        dma_buffer[dma_idx + 1 + (SCREEN_WIDTH / 8)] = 0x00;
+
+        dma_idx += 1 + (SCREEN_WIDTH / 8) + 1;
+    }
+    dma_buffer[dma_idx++] = 0x00;
+
+    // TODO: add cursor to dma buffer.
+
+    // return length of buffer to send with DMA.
+    return dma_idx;
 }
