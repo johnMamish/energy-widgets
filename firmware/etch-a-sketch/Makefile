@@ -18,7 +18,7 @@ SOURCES = main.c
 INCLUDES = -IInclude -I/opt/ti/msp430/gcc/include -I../common
 # Add or subtract whatever MSPGCC flags you want. There are plenty more
 #######################################################################################
-CFLAGS   = -mmcu=$(MCU) -g -O2 -Wall -Wunused $(INCLUDES) -mlarge -std=gnu99
+CFLAGS   = -mmcu=$(MCU) -g -Ofast -Wall -Wunused $(INCLUDES) -mlarge -std=gnu99
 ASFLAGS  = -mmcu=$(MCU) -x assembler-with-cpp -Wa,-gstabs -Wa,-mlarge
 LDFLAGS  = -mmcu=$(MCU) -Wl,-Map=$(TARGET).map -Wl,-L/opt/ti/msp430/gcc/include -mlarge
 ########################################################################################

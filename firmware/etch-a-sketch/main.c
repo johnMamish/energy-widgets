@@ -36,7 +36,7 @@ const q24_8_t VCC_Q24_8 = 512;
  */
 static void init_hardware();
 
-#if 0
+#if 1
 static uint8_t digit_to_hexchar(int digit)
 {
     return (digit >= 10) ? ((digit - 10) + 'a') : (digit + '0');
@@ -54,14 +54,13 @@ static void puts_blocking(const char* s)
 {
     for (int i = 0; s[i]; i++) { UCA0TXBUF = s[i]; while(UCA0STATW & (1 << 0)); }
 }
-
+#endif
 static q24_8_t calculate_voc(uint16_t adc_isense, uint16_t adc_vsense, q24_8_t rwind)
 {
     q24_8_t Ih = ((adc_isense * VCC_Q24_8) / ((RSENSE_Q24_8 * ISENSEGAIN_Q24_8) >> 8));
     q24_8_t Vh = ((adc_vsense * VCC_Q24_8) / (RDIV_FACTOR_Q24_8));
     return (Vh + ((Ih * rwind) >> 8));
 }
-#endif
 
 static inline q23_8_t iabs_q23_8(q23_8_t n)
 {
@@ -112,11 +111,17 @@ static uint8_t persistent_bitmap[SCREEN_HEIGHT][SCREEN_WIDTH / 8] __attribute__ 
 void clear_screen(uint8_t persistent_bitmap[SCREEN_HEIGHT][SCREEN_WIDTH / 8]);
 
 /**
+ * Draws a line between start_point and end_point and produces 2 artifacts as a result
+ *   - a line in the persistent bitmap
+ *   - an array of SPI commands that can be sent to the sharp memory display to update the
+ *     corresponding lines
  *
+ * preconditions
+ *   start_point and end_point are within bounds (> 0 and < screen_bounds)
  */
 uint16_t update_state(uint8_t persistent_bitmap[SCREEN_HEIGHT][SCREEN_WIDTH / 8],
-                      q23_8_t* point,
-                      q23_8_t* dpoint,
+                      const q23_8_t start_point[2],
+                      const q23_8_t end_point[2],
                       uint8_t* dma_buffer);
 
 int main()
@@ -144,40 +149,59 @@ int main()
     P8OUT &= ~(1 << 3);
 
     q23_8_t point[2] = {((SCREEN_WIDTH + 14)  / 2) * 256, ((SCREEN_HEIGHT - 8) / 2) * 256};
-    q23_8_t dpoint[2] = {200 * 3, 256};
+    volatile q23_8_t dpoint[2] = {1 * 256, 3 * 270};
+    volatile uint16_t telap = 0;
     while(1) {
         // polling wait until frame time (30Hz) is passed
-        while (((TA0R / 128) - tnow) < 33);
+        //while (((TA0R / 128) - tnow) < 33);
+        telap = (TA0R / 128) - tnow;
+        while (((TA0R / 128) - tnow) < 50);
         tnow = TA0R / 128;
 
         ////////////////////////////////////////////////
         // process data; fill buffer
+        // move cursor
+        _DINT();
+        uint16_t adcnow[4] = {adc_results[0], adc_results[1], adc_results[2], adc_results[3]};
+        _EINT();
+        uint16_t voc_motor_1 = (uint16_t)calculate_voc(adcnow[0], adcnow[1], MOTOR_RWIND_Q24_8);
+        uint16_t voc_motor_2 = (uint16_t)calculate_voc(adcnow[2], adcnow[3], MOTOR_RWIND_Q24_8);
+        int16_t dir_motor_1 = (P1IN & (1 << 3)) ? -1 : 1;
+        int16_t dir_motor_2 = (P1IN & (1 << 4)) ? -1 : 1;
+
+        char buf[8];
+        buf[0] = dir_motor_1 == -1 ? '-' : '+';
+        u16_to_hex(voc_motor_1, buf + 1);
+        buf[5] = '\r'; buf[6] = '\n'; buf[7] = '\0';
+        puts_blocking(buf);
+
+        dpoint[0] = (int32_t)voc_motor_1 * dir_motor_1;
+        dpoint[1] = (int32_t)voc_motor_2 * dir_motor_2;
+
+        q23_8_t new_point[2] = {point[0] + dpoint[0], point[1] + dpoint[1]};
+
+        if (new_point[0] < 0) {
+            new_point[0] = 0;
+        } else if (new_point[0] >= (SCREEN_WIDTH << 8)) {
+            new_point[0] = (SCREEN_WIDTH << 8) - 1;
+        }
+
+        if (new_point[1] < 0) {
+            new_point[1] = 0;
+        } else if (new_point[1] >= (SCREEN_HEIGHT << 8)) {
+            new_point[1] = (SCREEN_HEIGHT << 8);
+        }
+
         // fill command and vcom toggle
-        uint16_t buffer_len = update_state(persistent_bitmap, point, dpoint, &screen_buffers[front_buffer][0]);
+        uint16_t buffer_len = update_state(persistent_bitmap,
+                                           point,
+                                           new_point,
+                                           &screen_buffers[front_buffer][0]);
+
+        point[0] = new_point[0]; point[1] = new_point[1];
 
         // set toggling vcom
         screen_buffers[front_buffer][0] |= (front_buffer << 1);
-
-        // move cursor
-        point[0] += dpoint[0]; point[1] += dpoint[1];
-
-        #if 1
-        if (point[0] < 0) {
-            point[0] = -point[0];
-            dpoint[0] = -dpoint[0];
-        } else if (point[0] > (SCREEN_WIDTH << 8)) {
-            point[0] = (SCREEN_WIDTH << 8) - (point[0] - (SCREEN_WIDTH << 8));
-            dpoint[0] = -dpoint[0];
-        }
-
-        if (point[1] < 0) {
-            point[1] = -point[1];
-            dpoint[1] = -dpoint[1];
-        } else if (point[1] > (SCREEN_HEIGHT << 8)) {
-            point[1] = (SCREEN_HEIGHT << 8) - (point[1] - (SCREEN_HEIGHT << 8));
-            dpoint[1] = -dpoint[1];
-        }
-        #endif
 
         // poll on dma xfer being finished.
         while ((DMA3CTL & (1 << 4)));
@@ -196,14 +220,6 @@ int main()
 
         front_buffer++;
         if (front_buffer == 2) front_buffer = 0;
-
-#if 0
-        _DINT();
-        uint16_t adcnow[4] = {adc_results[0], adc_results[1], adc_results[2], adc_results[3]};
-        _EINT();
-        uint16_t voc_motor = (uint16_t)calculate_voc(adcnow[0], adcnow[1], MOTOR_RWIND_Q24_8);
-        uint16_t voc_shaker = (uint16_t)calculate_voc(adcnow[2], adcnow[3], MOTOR_RWIND_Q24_8);
-#endif
     }
     return -1;
 }
@@ -216,11 +232,21 @@ static void init_hardware()
     // Unlock I/O configurations
     PM5CTL0 &= ~LOCKLPM5;
 
+    ////////////////////////////////////////////////
+    // GPIO setup
     // todo: make all pins pulldown for power saving (see 12.3.2)
-
     // leds P1.0 and P1.1 for debug
     P1OUT = 0;
     P1DIR |= (1 << 1) | (1 << 0);
+
+    // P1.2 is "DISP" pin for enabling sharp memory display
+    P1DIR |= (1 << 2);
+    P1OUT |= (1 << 2);
+
+    // motor direction sense
+    P1DIR &= ~((1 << 3) | (1 << 4));
+    P1REN |= ((1 << 3) | (1 << 4));
+    P1OUT |= ((1 << 3) | (1 << 4));
 
     // Change SMCLK to be 8MHz / 1 instead of 8MHz / 8. Clock control registers need to be unlocked
     // by writing a key value to CSCTL0 first.
@@ -256,6 +282,7 @@ static void init_hardware()
     // TA0 runs at 125kHz
     TA0CTL = ((0b10u    <<  8) |      // Use SMCLK for timer
               (0b11u    <<  6) |      // Input divider is /8
+              //(0b00u    <<  6) |      // Input divider is /8
               (0b10u    <<  4) |      // Timer counts in continuous mode; rolls over from 0xffff to 0x0000.
               (0b0u     <<  2) |      // Don't reset timer
               (0b0u     <<  1) |      // interrupt enable
@@ -403,48 +430,70 @@ static q23_8_t length_q23_8(const q23_8_t* dp)
 }
 
 uint16_t update_state(uint8_t persistent_bitmap[SCREEN_HEIGHT][SCREEN_WIDTH / 8],
-                      q23_8_t* point,
-                      q23_8_t* dpoint,
+                      const q23_8_t _start_point[2],
+                      const q23_8_t _end_point[2],
                       uint8_t* dma_buffer)
 {
     uint8_t n_updated_lines = 0;
     static uint8_t updated_screen_lines[32];
 
-    // simple and inaccurate fixed-point line drawing algorithm; dumb. room for optimization.
-    q23_8_t length = length_q23_8(dpoint);
-    q23_8_t normalized_dpoint[2] = {(dpoint[0] * 256) / length,
-        (dpoint[1] * 256) / length};
+    // setup bresenham's line drawing algorithm
+    uint8_t s[2] = {(uint8_t)(_start_point[0] >> 8), (uint8_t)(_start_point[1] >> 8)};
+    uint8_t e[2] = {(uint8_t)(_end_point[0] >> 8), (_end_point[1] >> 8)};
+    int8_t d[2] = {(int8_t)(e[0] - s[0]), (int8_t)(e[1] - s[1])};
 
-    q23_8_t q[2] = {point[0], point[1]};
-    for (int i = 0; i < (length / 256); i++) {
-        // set pixel at point
-        // note - black pixels are '0', white pixels are '1'
-        uint8_t x = q[0] / 256;
-        uint8_t y = q[1] / 256;
-        persistent_bitmap[y][x / 8] &= ~(1 << (x % 8));
+    int major_axis, minor_axis;
+    if (iabs_q23_8(d[0]) >= iabs_q23_8(d[1]))
+        major_axis = 0;
+    else
+        major_axis = 1;
 
-        // do a linear search through the lines we've already logged and decide not to log this line
-        // if we've already logged it.
-        int f = 0;
-        for (int i = (n_updated_lines - 1); i >= 0; i--) {
-            if (updated_screen_lines[i] == y) {
-                f = 1;
-                break;
-            }
-        }
+    minor_axis = (major_axis + 1) % 2;
 
-        if (!f)
-            updated_screen_lines[n_updated_lines++] = y;
+    if (d[major_axis] < 0) {
+        s[0] = (uint8_t)(_end_point[0] >> 8); s[1] = (uint8_t)(_end_point[1] >> 8);
+        e[0] = (uint8_t)(_start_point[0] >> 8); e[1] = (uint8_t)(_start_point[1] >> 8);
 
-        // move point in direction
-        q[0] += normalized_dpoint[0];
-        q[1] += normalized_dpoint[1];
+        d[major_axis] = -d[major_axis];
+        d[minor_axis] = -d[minor_axis];
     }
 
-    uint8_t x = q[0] / 256;
+    int8_t incr_dir = 1;
+    if (d[minor_axis] < 0) {
+        incr_dir = -1;
+        d[minor_axis] = -d[minor_axis];
+    }
+    int8_t D = (2 * d[minor_axis]) - d[major_axis];
+
+    int did_minor_axis_incr = 1;
+    while (s[major_axis] <= e[major_axis]) {
+        // plot
+        persistent_bitmap[s[1]][s[0] / 8] &= ~(1 << (s[0] % 8));
+        if (major_axis == 0) {
+            // TODO
+            if (did_minor_axis_incr)
+                updated_screen_lines[n_updated_lines++] = s[1];
+        } else {
+            // TODO
+            updated_screen_lines[n_updated_lines++] = s[1];
+        }
+
+        if (D > 0) {
+            s[minor_axis] += incr_dir;
+            D += (2 * (d[minor_axis] - d[major_axis]));
+            did_minor_axis_incr = 1;
+        } else {
+            D += 2 * d[minor_axis];
+            did_minor_axis_incr = 0;
+        }
+
+        s[major_axis]++;
+    }
+
+    /*uint8_t x = q[0] / 256;
     uint8_t y = q[1] / 256;
     persistent_bitmap[y][x / 8] &= ~(1 << (x % 8));
-    updated_screen_lines[n_updated_lines++] = y;
+    updated_screen_lines[n_updated_lines++] = y;*/
 
     // TODO: caller needs to make sure to toggle vcom bit
     dma_buffer[0] = (1 << 0);

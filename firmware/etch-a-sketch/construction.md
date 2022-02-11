@@ -2,20 +2,20 @@ Left-hand side motor harvester
   - sense pin 1: gnd
   - sense pin 2: P3.0
   - sense pin 3: P3.1
-  - sense pin 4: TBD
+  - sense pin 4: P1.3
 
 Right-hand side motor harvester
   - sense pin 1: gnd
   - sense pin 2: P3.2
   - sense pin 3: P3.3
-  - sense pin 4: TBD
+  - sense pin 4: P1.4
 
 Screen
   - EIN: NC
          When EMD is high; this pin toggles VCOM inside the LCD.
          When EMD is low, it should be tied to VSS. Adafruit's carrier board has a pulldown
          resistor on EIN, so we can leave it NC.
-  - DISP: msp430 P8.1
+  - DISP: msp430 P1.2
           Toggles whether to show something on the display or not.
   - EMD: NC
          When EMD is high, an external VCOM signal needs to be supplied on EIN.
